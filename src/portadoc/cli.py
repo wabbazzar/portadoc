@@ -35,7 +35,13 @@ def main():
     default=300,
     help="DPI for PDF rendering (default: 300)"
 )
-def extract(pdf_path: Path, output: Path | None, format: str, dpi: int):
+@click.option(
+    "--triage",
+    type=click.Choice(["strict", "normal", "permissive"]),
+    default=None,
+    help="Triage level to filter low-confidence detections (default: none)"
+)
+def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None):
     """
     Extract words and bounding boxes from a PDF.
 
@@ -43,7 +49,7 @@ def extract(pdf_path: Path, output: Path | None, format: str, dpi: int):
     """
     try:
         # Extract words
-        doc = extract_words(pdf_path, dpi=dpi)
+        doc = extract_words(pdf_path, dpi=dpi, triage=triage)
 
         # Output results
         if output:

@@ -10,15 +10,21 @@
 - [x] Build coordinate transformation (image coords → PDF coords)
 - [x] Create basic CLI with `extract` command
 - [x] Implement pixel detection fallback for OCR misses
-- [ ] **BLOCKED**: Install tesseract-ocr binary - needs sudo: `sudo apt-get install tesseract-ocr tesseract-ocr-eng`
+- [x] Install tesseract-ocr binary (tesseract 5.3.4 verified working)
 
 ## Medium Priority (Quality Improvements)
 
-- [ ] Implement OpenCV preprocessing pipeline
-  - Grayscale, denoising, contrast enhancement, binarization
-- [ ] Build OCR result harmonization logic (Tesseract + EasyOCR)
-  - Merge overlapping boxes, vote on text content
-- [ ] Add confidence-based triage system
+- [x] Implement OpenCV preprocessing pipeline
+  - Implemented in preprocess.py: grayscale, denoise, CLAHE contrast, sharpen, binarize
+  - Levels: none, light, standard, aggressive, auto
+  - Auto-detection uses Laplacian variance + contrast std
+- [x] Build OCR result harmonization logic (Tesseract + EasyOCR)
+  - Implemented in harmonize.py: matches by IoU, votes on text, merges confidences
+- [x] Add confidence-based triage system
+  - Implemented in triage.py: strict, normal, permissive levels
+  - Filters by: min confidence, text length, aspect ratio, area, punctuation
+  - CLI: --triage flag (strict|normal|permissive)
+  - Results: no triage=418, permissive=415, normal=407, strict=402 (GT=401)
 - [ ] Create evaluation metrics (recall, precision, IoU vs ground truth)
 
 ## Low Priority (Web Service & Polish)
@@ -38,26 +44,29 @@
 
 ## Validation Results
 
-**Latest extraction test (peter_lou.pdf with EasyOCR + pixel detection):**
+**Latest extraction test (peter_lou.pdf with harmonization + pixel detection):**
 - Ground truth: 401 entries
-- Our output: 385 entries
-- OCR words: 378
-- Pixel detector regions: 7 (3 match ground truth, 4 extra detections)
+- Our output: 420 entries (over-extraction is OK for redaction recall)
+- Tesseract alone: 399 words
+- EasyOCR alone: 378 words
+- Harmonized: 414 words
+- Pixel detector regions: 6 (3 match ground truth, 3 extra)
 
-**Pixel detector accuracy:**
-- Page 0 logo: ✓ detected (bbox matches within 1-2 pts)
-- Page 0 horizontal line: ✓ detected
-- Page 2 vertical line: ✓ detected
-
-**Missing content analysis:**
+**Text coverage analysis:**
+- Missing texts (4): `0923847`, `4_`, `peter lou`, `rmartinez pdx@gmail.com`
+- Extra texts (5+): minor variations like `,`, email formatting differences
 - Most differences are OCR transcription variations (e.g., `10.28` vs `10:28`)
-- Single-character entries (`e`, `o`, `i`) not detected - likely low-confidence
-- Some multi-word items split differently
 
-**Next steps to improve recall:**
-1. Install Tesseract for better OCR accuracy
-2. Implement harmonization to combine Tesseract + EasyOCR results
-3. Tune pixel detection to reduce false positives
+**Harmonization strategy:**
+- Match words by bounding box IoU (threshold 0.3)
+- Vote on text: prefer Tesseract for character accuracy
+- Include unmatched Tesseract words (high recall)
+- Include unmatched EasyOCR words if not covered by Tesseract
+
+**Next steps to improve accuracy:**
+1. Tune pixel detection to reduce false positives
+2. Add confidence-based filtering for extra detections
+3. Implement preprocessing pipeline for degraded PDFs
 
 ## Notes
 
@@ -67,11 +76,25 @@
 - `pixel_detector` engine = fallback for OCR-missed content with confidence 0.0
 - Target: 401 words across 3 pages matching ground truth
 
-## Current Blocker
+## Current Status
 
-**Tesseract binary not installed.** Run this command to unblock:
-```bash
-sudo apt-get install tesseract-ocr tesseract-ocr-eng
-```
+**✓ Tesseract installed and verified** (v5.3.4)
+**✓ Harmonization implemented** (harmonize.py - Tesseract + EasyOCR fusion)
+**✓ OpenCV preprocessing implemented** (preprocess.py - auto-detects quality level)
 
-Then verify with: `PYTHONPATH=src python3 -m portadoc.cli check`
+**Preprocessing test results (degraded 50dpi PDF):**
+- No preprocess: 476 words (noisy)
+- Light: 506 words
+- Standard: 517 words
+- Aggressive: 267 words (over-filtered)
+- Auto: 422 words (balanced)
+
+**✓ Triage system implemented** (triage.py - filters low-confidence detections)
+
+**Triage test results:**
+- No triage: 418 words
+- Permissive: 415 words
+- Normal: 407 words
+- Strict: 402 words (very close to GT=401)
+
+Next task: Create evaluation metrics (recall, precision, IoU)
