@@ -41,15 +41,46 @@ def main():
     default=None,
     help="Triage level to filter low-confidence detections (default: none)"
 )
-def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None):
+@click.option(
+    "--progress", "-p",
+    is_flag=True,
+    help="Show progress bar during extraction"
+)
+def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool):
     """
     Extract words and bounding boxes from a PDF.
 
     PDF_PATH is the path to the input PDF file.
     """
     try:
+        # Set up progress callback if requested
+        progress_bar = None
+        if progress:
+            # We need to know total pages first
+            from .pdf import load_pdf
+            with load_pdf(pdf_path, dpi=dpi) as pdf:
+                total_pages = len(pdf)
+            progress_bar = click.progressbar(
+                length=total_pages,
+                label="Extracting",
+                file=sys.stderr,
+            )
+            progress_bar.__enter__()
+
+        def progress_callback(page_num, total, stage):
+            if progress_bar:
+                progress_bar.update(1)
+
         # Extract words
-        doc = extract_words(pdf_path, dpi=dpi, triage=triage)
+        doc = extract_words(
+            pdf_path,
+            dpi=dpi,
+            triage=triage,
+            progress_callback=progress_callback if progress else None,
+        )
+
+        if progress_bar:
+            progress_bar.__exit__(None, None, None)
 
         # Output results
         if output:

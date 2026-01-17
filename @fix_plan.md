@@ -43,7 +43,10 @@
   - GET /jobs lists all jobs, DELETE /jobs/{job_id} cleans up
   - Uses ThreadPoolExecutor with 2 workers for CPU-bound OCR
 - [x] Implement JSON output format (in output.py)
-- [ ] Add progress reporting for CLI
+- [x] Add progress reporting for CLI
+  - CLI: `--progress` / `-p` flag shows progress bar during extraction
+  - Uses click.progressbar with per-page updates
+  - extractor.py accepts progress_callback parameter
 - [ ] Research additional CPU-compatible OCRs (PaddleOCR, docTR)
 - [ ] Performance optimization
 

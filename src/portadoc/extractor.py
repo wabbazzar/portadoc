@@ -22,6 +22,7 @@ def extract_words(
     gpu: bool = False,
     preprocess: Optional[str] = "auto",
     triage: Optional[str] = None,
+    progress_callback: Optional[callable] = None,
 ) -> Document:
     """
     Extract words from a PDF document.
@@ -35,6 +36,7 @@ def extract_words(
         gpu: Whether to use GPU for EasyOCR (default: False)
         preprocess: Preprocessing level - "none", "light", "standard", "aggressive", or "auto"
         triage: Triage level - "strict", "normal", "permissive", or None (no triage)
+        progress_callback: Optional callback(page_num, total_pages, stage) for progress reporting
 
     Returns:
         Document with extracted words
@@ -54,7 +56,13 @@ def extract_words(
     word_id_counter = 0
 
     with load_pdf(pdf_path, dpi=dpi) as pdf:
+        total_pages = len(pdf)
+
         for page_num, image, page_width, page_height in pdf.pages():
+            # Report progress: starting page
+            if progress_callback:
+                progress_callback(page_num, total_pages, "processing")
+
             page = Page(
                 page_number=page_num,
                 width=page_width,
