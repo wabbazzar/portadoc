@@ -567,35 +567,69 @@ def find_word_match(
     words: list[Word],
     matched_ids: set[int],
     iou_threshold: float,
+    text_match_bonus: float = 0.15,
+    center_distance_max: float = 12.0,
 ) -> Optional[MatchResult]:
     """
     Match a word-level primary to a word-level secondary using IoU.
+
+    Uses text-aware matching: when text matches (case-insensitive), the IoU
+    threshold is lowered by text_match_bonus. Additionally, if centers are
+    within center_distance_max and text matches, treat as a match even with
+    very low IoU.
 
     Args:
         primary: Primary word
         words: Secondary words
         matched_ids: Set of already-matched word IDs
         iou_threshold: Minimum IoU for match
+        text_match_bonus: IoU threshold reduction when text matches (default 0.15)
+        center_distance_max: Max center-to-center distance for fallback match (default 12.0)
 
     Returns:
         MatchResult or None
     """
     best_match = None
-    best_iou = 0.0
+    best_score = 0.0  # Combined score considering IoU and text match
+
+    primary_text_lower = primary.text.lower().strip()
+    primary_cx = primary.bbox.center_x
+    primary_cy = primary.bbox.center_y
 
     for i, word in enumerate(words):
         if i in matched_ids or word.page != primary.page:
             continue
 
         iou = primary.bbox.iou(word.bbox)
-        if iou >= iou_threshold and iou > best_iou:
-            best_iou = iou
-            best_match = MatchResult(
-                text=word.text,
-                confidence=word.confidence or 0,
-                engine="",
-                word_id=i,
-            )
+        word_text_lower = word.text.lower().strip()
+        text_matches = (primary_text_lower == word_text_lower)
+
+        # Calculate effective threshold based on text match
+        effective_threshold = iou_threshold
+        if text_matches:
+            effective_threshold -= text_match_bonus
+
+        # Primary matching: IoU meets effective threshold
+        is_match = iou >= effective_threshold
+
+        # Fallback matching: center distance + text match
+        if not is_match and text_matches and center_distance_max > 0:
+            center_dist = ((word.bbox.center_x - primary_cx) ** 2 +
+                          (word.bbox.center_y - primary_cy) ** 2) ** 0.5
+            if center_dist <= center_distance_max:
+                is_match = True
+
+        if is_match:
+            # Score combines IoU and text match bonus
+            score = iou + (0.5 if text_matches else 0.0)
+            if score > best_score:
+                best_score = score
+                best_match = MatchResult(
+                    text=word.text,
+                    confidence=word.confidence or 0,
+                    engine="",
+                    word_id=i,
+                )
 
     return best_match
 
@@ -711,7 +745,9 @@ def smart_harmonize(
             else:
                 match = find_word_match(
                     primary, sec_words, matched_secondary[engine],
-                    config.harmonize.iou_threshold
+                    config.harmonize.iou_threshold,
+                    config.harmonize.text_match_bonus,
+                    config.harmonize.center_distance_max,
                 )
 
             if match:

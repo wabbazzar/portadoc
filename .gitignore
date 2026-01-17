@@ -44,6 +44,9 @@ data/output/*.csv
 data/output/*.json
 *.log
 
+# Temp files
+tmp/
+
 # OS
 .DS_Store
 Thumbs.db

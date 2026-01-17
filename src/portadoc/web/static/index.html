@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portadoc - PDF Visualization</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Portadoc</h1>
+        <div class="controls">
+            <select id="pdf-select">
+                <option value="">Select PDF...</option>
+            </select>
+            <button id="extract-btn" disabled>Extract</button>
+            <button id="toggle-config-btn">Config</button>
+        </div>
+    </header>
+
+    <main>
+        <!-- Config Panel (hidden by default) -->
+        <aside id="config-panel" class="hidden">
+            <h3>Extraction Settings</h3>
+            <div class="config-group">
+                <label><input type="checkbox" id="cfg-tesseract" checked disabled> Tesseract (always on)</label>
+                <label><input type="checkbox" id="cfg-easyocr" checked> EasyOCR</label>
+                <label><input type="checkbox" id="cfg-paddleocr"> PaddleOCR</label>
+                <label><input type="checkbox" id="cfg-doctr"> docTR</label>
+            </div>
+            <div class="config-group">
+                <label>Preprocess:
+                    <select id="cfg-preprocess">
+                        <option value="none" selected>None</option>
+                        <option value="light">Light</option>
+                        <option value="standard">Standard</option>
+                        <option value="aggressive">Aggressive</option>
+                    </select>
+                </label>
+            </div>
+            <div class="config-group">
+                <label>PSM: <input type="number" id="cfg-psm" value="6" min="0" max="13"></label>
+                <label>OEM: <input type="number" id="cfg-oem" value="3" min="0" max="3"></label>
+            </div>
+            <div class="config-group">
+                <label><input type="checkbox" id="cfg-smart" checked> Smart Harmonization</label>
+            </div>
+            <button id="apply-extract-btn">Apply & Re-extract</button>
+        </aside>
+
+        <!-- PDF Viewer -->
+        <section id="pdf-viewer">
+            <div id="pdf-container">
+                <canvas id="pdf-canvas"></canvas>
+                <canvas id="bbox-canvas"></canvas>
+            </div>
+            <div class="page-controls">
+                <button id="prev-page" disabled>&lt; Prev</button>
+                <span id="page-info">Page 0 / 0</span>
+                <button id="next-page" disabled>Next &gt;</button>
+            </div>
+        </section>
+
+        <!-- Word List -->
+        <section id="word-list">
+            <div class="list-header">
+                <h3>Words <span id="word-count">(0)</span></h3>
+                <div class="filter-controls">
+                    <label>Filter:
+                        <select id="status-filter">
+                            <option value="">All</option>
+                            <option value="word">word</option>
+                            <option value="low_conf">low_conf</option>
+                            <option value="secondary_only">secondary_only</option>
+                            <option value="pixel">pixel</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+            <div class="stats" id="stats"></div>
+            <table id="words-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Text</th>
+                        <th>Source</th>
+                        <th>Status</th>
+                        <th>Conf</th>
+                    </tr>
+                </thead>
+                <tbody id="words-tbody">
+                </tbody>
+            </table>
+        </section>
+    </main>
+
+    <!-- Word Details Popup -->
+    <div id="word-details" class="hidden">
+        <div class="details-content">
+            <h4>Word Details</h4>
+            <div id="details-body"></div>
+            <button id="close-details">Close</button>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

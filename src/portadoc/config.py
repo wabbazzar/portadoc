@@ -52,6 +52,8 @@ class GarbageDetectionConfig:
 class HarmonizeConfig:
     """Harmonization configuration."""
     iou_threshold: float = 0.3
+    text_match_bonus: float = 0.15  # Lower IoU threshold when text matches
+    center_distance_max: float = 12.0  # Max center distance for fallback matching
     status: StatusConfig = field(default_factory=StatusConfig)
     primary: PrimaryConfig = field(default_factory=PrimaryConfig)
     secondary: SecondaryConfig = field(default_factory=SecondaryConfig)
@@ -171,6 +173,8 @@ def _parse_config(data: dict) -> PortadocConfig:
     if "harmonize" in data:
         h = data["harmonize"]
         config.harmonize.iou_threshold = h.get("iou_threshold", 0.3)
+        config.harmonize.text_match_bonus = h.get("text_match_bonus", 0.15)
+        config.harmonize.center_distance_max = h.get("center_distance_max", 12.0)
 
         # Status
         if "status" in h:

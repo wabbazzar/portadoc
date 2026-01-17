@@ -5,8 +5,8 @@ from pathlib import Path
 
 import click
 
-from .extractor import extract_words
-from .output import format_output
+from .extractor import extract_words, extract_words_smart
+from .output import format_output, write_harmonized_csv
 
 
 @click.group()
@@ -48,7 +48,7 @@ def main():
 )
 @click.option(
     "--preprocess",
-    type=click.Choice(["none", "light", "standard", "aggressive", "auto"]),
+    type=click.Choice(["none", "light", "standard", "aggressive", "degraded", "auto"]),
     default="auto",
     help="Preprocessing level for OCR (default: auto)"
 )
@@ -103,7 +103,22 @@ def main():
     default="espcn",
     help="Super-resolution method (default: espcn)"
 )
-def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool, preprocess: str, psm: int, oem: int, easyocr_decoder: str, easyocr_text_threshold: float, use_paddleocr: bool, no_tesseract: bool, no_easyocr: bool, upscale: str, upscale_method: str):
+@click.option(
+    "--use-doctr",
+    is_flag=True,
+    help="Enable docTR engine"
+)
+@click.option(
+    "--smart",
+    is_flag=True,
+    help="Use smart harmonization with full tracking (outputs HarmonizedWord CSV)"
+)
+@click.option(
+    "--config",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to config file (YAML) for harmonization thresholds"
+)
+def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool, preprocess: str, psm: int, oem: int, easyocr_decoder: str, easyocr_text_threshold: float, use_paddleocr: bool, no_tesseract: bool, no_easyocr: bool, upscale: str, upscale_method: str, use_doctr: bool, smart: bool, config: Path | None):
     """
     Extract words and bounding boxes from a PDF.
 
@@ -131,38 +146,75 @@ def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: 
         # Parse upscale factor
         upscale_factor = None if upscale == "none" else int(upscale)
 
-        # Extract words
-        doc = extract_words(
-            pdf_path,
-            dpi=dpi,
-            triage=triage,
-            preprocess=preprocess,
-            upscale=upscale_factor,
-            upscale_method=upscale_method,
-            tesseract_psm=psm,
-            tesseract_oem=oem,
-            easyocr_decoder=easyocr_decoder,
-            easyocr_text_threshold=easyocr_text_threshold,
-            use_paddleocr=use_paddleocr,
-            use_tesseract=not no_tesseract,
-            use_easyocr=not no_easyocr,
-            progress_callback=progress_callback if progress else None,
-        )
-
-        if progress_bar:
-            progress_bar.__exit__(None, None, None)
-
-        # Output results
-        if output:
-            format_output(doc, output, format=format)
-            click.echo(f"Extracted {doc.total_words} words to {output}", err=True)
-        else:
+        if smart:
+            # Use smart harmonization mode
+            if triage:
+                click.echo("Warning: --triage is ignored in --smart mode", err=True)
             if format == "json":
-                click.echo("Error: --output is required for JSON format", err=True)
+                click.echo("Error: --smart mode only supports CSV output", err=True)
                 sys.exit(1)
-            # Write CSV to stdout
-            from .output import write_csv
-            write_csv(doc, sys.stdout)
+
+            harmonized_words = extract_words_smart(
+                pdf_path,
+                dpi=dpi,
+                preprocess=preprocess,
+                upscale=upscale_factor,
+                upscale_method=upscale_method,
+                tesseract_psm=psm,
+                tesseract_oem=oem,
+                easyocr_decoder=easyocr_decoder,
+                easyocr_text_threshold=easyocr_text_threshold,
+                use_paddleocr=use_paddleocr,
+                use_tesseract=not no_tesseract,
+                use_easyocr=not no_easyocr,
+                use_doctr=use_doctr,
+                config_path=config,
+                progress_callback=progress_callback if progress else None,
+            )
+
+            if progress_bar:
+                progress_bar.__exit__(None, None, None)
+
+            # Output results
+            if output:
+                write_harmonized_csv(harmonized_words, output)
+                click.echo(f"Extracted {len(harmonized_words)} words to {output}", err=True)
+            else:
+                write_harmonized_csv(harmonized_words, sys.stdout)
+        else:
+            # Standard extraction mode
+            doc = extract_words(
+                pdf_path,
+                dpi=dpi,
+                triage=triage,
+                preprocess=preprocess,
+                upscale=upscale_factor,
+                upscale_method=upscale_method,
+                tesseract_psm=psm,
+                tesseract_oem=oem,
+                easyocr_decoder=easyocr_decoder,
+                easyocr_text_threshold=easyocr_text_threshold,
+                use_paddleocr=use_paddleocr,
+                use_tesseract=not no_tesseract,
+                use_easyocr=not no_easyocr,
+                use_doctr=use_doctr,
+                progress_callback=progress_callback if progress else None,
+            )
+
+            if progress_bar:
+                progress_bar.__exit__(None, None, None)
+
+            # Output results
+            if output:
+                format_output(doc, output, format=format)
+                click.echo(f"Extracted {doc.total_words} words to {output}", err=True)
+            else:
+                if format == "json":
+                    click.echo("Error: --output is required for JSON format", err=True)
+                    sys.exit(1)
+                # Write CSV to stdout
+                from .output import write_csv
+                write_csv(doc, sys.stdout)
 
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
@@ -178,6 +230,7 @@ def check():
     from .ocr.tesseract import is_tesseract_available, get_tesseract_version
     from .ocr.easyocr import is_easyocr_available, get_easyocr_version
     from .ocr.paddleocr import is_paddleocr_available, get_paddleocr_version
+    from .ocr.doctr_ocr import is_doctr_available, get_doctr_version
 
     click.echo("OCR Engine Status:")
     click.echo("-" * 40)
@@ -202,6 +255,13 @@ def check():
     else:
         click.echo("PaddleOCR:  NOT FOUND")
         click.echo("  Install with: pip install paddleocr")
+
+    if is_doctr_available():
+        version = get_doctr_version()
+        click.echo(f"docTR:      OK (version {version})")
+    else:
+        click.echo("docTR:      NOT FOUND")
+        click.echo("  Install with: pip install python-doctr[torch]")
 
 
 @main.command("eval")
@@ -232,7 +292,7 @@ def check():
 )
 @click.option(
     "--preprocess",
-    type=click.Choice(["none", "light", "standard", "aggressive", "auto"]),
+    type=click.Choice(["none", "light", "standard", "aggressive", "degraded", "auto"]),
     default="auto",
     help="Preprocessing level for OCR (default: auto)"
 )
@@ -287,6 +347,21 @@ def check():
     default="espcn",
     help="Super-resolution method (default: espcn)"
 )
+@click.option(
+    "--use-doctr",
+    is_flag=True,
+    help="Enable docTR engine"
+)
+@click.option(
+    "--smart",
+    is_flag=True,
+    help="Use smart harmonization mode"
+)
+@click.option(
+    "--config",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to config file (YAML) for harmonization thresholds"
+)
 def evaluate_cmd(
     pdf_path: Path,
     ground_truth: Path,
@@ -304,6 +379,9 @@ def evaluate_cmd(
     no_easyocr: bool,
     upscale: str,
     upscale_method: str,
+    use_doctr: bool,
+    smart: bool,
+    config: Path | None,
 ):
     """
     Evaluate extraction against ground truth CSV.
@@ -317,19 +395,40 @@ def evaluate_cmd(
         # Parse upscale factor
         upscale_factor = None if upscale == "none" else int(upscale)
 
-        # Extract words
-        doc = extract_words(
-            pdf_path, dpi=dpi, triage=triage, preprocess=preprocess,
-            upscale=upscale_factor, upscale_method=upscale_method,
-            tesseract_psm=psm, tesseract_oem=oem,
-            easyocr_decoder=easyocr_decoder, easyocr_text_threshold=easyocr_text_threshold,
-            use_paddleocr=use_paddleocr,
-            use_tesseract=not no_tesseract,
-            use_easyocr=not no_easyocr,
-        )
+        if smart:
+            # Use smart harmonization mode
+            if triage:
+                click.echo("Warning: --triage is ignored in --smart mode", err=True)
 
-        # Evaluate
-        result = evaluate(doc, ground_truth, iou_threshold=iou_threshold)
+            harmonized_words = extract_words_smart(
+                pdf_path, dpi=dpi, preprocess=preprocess,
+                upscale=upscale_factor, upscale_method=upscale_method,
+                tesseract_psm=psm, tesseract_oem=oem,
+                easyocr_decoder=easyocr_decoder, easyocr_text_threshold=easyocr_text_threshold,
+                use_paddleocr=use_paddleocr,
+                use_tesseract=not no_tesseract,
+                use_easyocr=not no_easyocr,
+                use_doctr=use_doctr,
+                config_path=config,
+            )
+
+            # Evaluate
+            result = evaluate(harmonized_words, ground_truth, iou_threshold=iou_threshold)
+        else:
+            # Standard mode
+            doc = extract_words(
+                pdf_path, dpi=dpi, triage=triage, preprocess=preprocess,
+                upscale=upscale_factor, upscale_method=upscale_method,
+                tesseract_psm=psm, tesseract_oem=oem,
+                easyocr_decoder=easyocr_decoder, easyocr_text_threshold=easyocr_text_threshold,
+                use_paddleocr=use_paddleocr,
+                use_tesseract=not no_tesseract,
+                use_easyocr=not no_easyocr,
+                use_doctr=use_doctr,
+            )
+
+            # Evaluate
+            result = evaluate(doc, ground_truth, iou_threshold=iou_threshold)
 
         # Print summary
         click.echo(result.summary())
@@ -371,17 +470,18 @@ def evaluate_cmd(
     help="Enable auto-reload for development"
 )
 def serve(host: str, port: int, reload: bool):
-    """Start the FastAPI REST server."""
+    """Start the FastAPI REST server with web visualization UI."""
     import uvicorn
 
-    click.echo(f"Starting Portadoc API server at http://{host}:{port}")
+    click.echo(f"Starting Portadoc Web UI at http://{host}:{port}")
     click.echo("API docs available at /docs")
 
     uvicorn.run(
-        "portadoc.api:app",
+        "portadoc.web.app:create_app",
         host=host,
         port=port,
         reload=reload,
+        factory=True,
     )
 
 

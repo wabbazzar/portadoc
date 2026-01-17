@@ -223,6 +223,21 @@ def preprocess_for_ocr(
         # Use adaptive binarization for degraded docs
         result = binarize(sharpened, method="adaptive", block_size=15, c=4)
 
+    elif level == PreprocessLevel.DEGRADED:
+        # Degraded: for blurry/low-DPI documents
+        # Step 1: Upscale 2x with Lanczos interpolation to increase effective DPI
+        h, w = gray.shape[:2]
+        upscaled = cv2.resize(gray, (w * 2, h * 2), interpolation=cv2.INTER_LANCZOS4)
+
+        # Step 2: Bilateral filter preserves edges while reducing noise
+        bilateral = cv2.bilateralFilter(upscaled, d=9, sigmaColor=75, sigmaSpace=75)
+
+        # Step 3: CLAHE for contrast enhancement
+        enhanced = enhance_contrast(bilateral, clip_limit=2.0)
+
+        # Step 4: Unsharp mask for edge enhancement
+        result = sharpen(enhanced, strength=1.5)
+
     else:
         result = gray
 
@@ -260,6 +275,10 @@ def auto_detect_quality(image: np.ndarray) -> PreprocessLevel:
     elif laplacian_var > 100 and contrast > 30:
         # Moderate quality
         return PreprocessLevel.STANDARD
-    else:
-        # Degraded/blurry image
+    elif laplacian_var > 50:
+        # Degraded/noisy image
         return PreprocessLevel.AGGRESSIVE
+    else:
+        # Very low quality/blurry image (low DPI, heavy compression)
+        # laplacian_var < 50 indicates severe blur
+        return PreprocessLevel.DEGRADED

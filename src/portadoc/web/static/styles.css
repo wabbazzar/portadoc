@@ -1,0 +1,290 @@
+/* Portadoc Web Styles */
+
+:root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --bg-panel: #0f3460;
+    --text-primary: #eee;
+    --text-secondary: #aaa;
+    --accent: #e94560;
+    --word-color: #4ade80;
+    --lowconf-color: #facc15;
+    --pixel-color: #f87171;
+    --secondary-color: #fb923c;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--bg-panel);
+}
+
+header h1 {
+    font-size: 1.5rem;
+    color: var(--accent);
+}
+
+.controls {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+select, button, input {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--bg-panel);
+    border-radius: 4px;
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+button {
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+button:hover:not(:disabled) {
+    background: var(--accent);
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+main {
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 1rem;
+    padding: 1rem;
+    height: calc(100vh - 70px);
+}
+
+/* Config Panel */
+#config-panel {
+    position: fixed;
+    top: 70px;
+    right: 0;
+    width: 300px;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--bg-panel);
+    padding: 1rem;
+    height: calc(100vh - 70px);
+    z-index: 100;
+    overflow-y: auto;
+}
+
+#config-panel.hidden {
+    display: none;
+}
+
+#config-panel h3 {
+    margin-bottom: 1rem;
+    color: var(--accent);
+}
+
+.config-group {
+    margin-bottom: 1rem;
+}
+
+.config-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.config-group input[type="number"] {
+    width: 60px;
+    margin-left: 0.5rem;
+}
+
+#apply-extract-btn {
+    width: 100%;
+    background: var(--accent);
+    margin-top: 1rem;
+}
+
+/* PDF Viewer */
+#pdf-viewer {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#pdf-container {
+    flex: 1;
+    position: relative;
+    overflow: auto;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 1rem;
+}
+
+#pdf-canvas {
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+#bbox-canvas {
+    position: absolute;
+    pointer-events: none;
+}
+
+.page-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem;
+    background: var(--bg-panel);
+}
+
+/* Word List */
+#word-list {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: var(--bg-panel);
+}
+
+.list-header h3 {
+    color: var(--accent);
+}
+
+.stats {
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--bg-panel);
+}
+
+#words-table {
+    flex: 1;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    overflow-y: auto;
+}
+
+#words-table thead {
+    position: sticky;
+    top: 0;
+    background: var(--bg-panel);
+}
+
+#words-table th, #words-table td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid var(--bg-primary);
+}
+
+#words-table tbody tr {
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+#words-table tbody tr:hover,
+#words-table tbody tr.highlighted {
+    background: var(--bg-panel);
+}
+
+/* Status colors */
+.status-word { color: var(--word-color); }
+.status-low_conf { color: var(--lowconf-color); }
+.status-secondary_only { color: var(--secondary-color); }
+.status-pixel { color: var(--pixel-color); }
+
+/* Word Details Popup */
+#word-details {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 200;
+}
+
+#word-details.hidden {
+    display: none;
+}
+
+.details-content {
+    background: var(--bg-secondary);
+    padding: 2rem;
+    border-radius: 8px;
+    max-width: 500px;
+    width: 90%;
+}
+
+.details-content h4 {
+    color: var(--accent);
+    margin-bottom: 1rem;
+}
+
+#details-body {
+    margin-bottom: 1rem;
+}
+
+#details-body p {
+    margin-bottom: 0.5rem;
+}
+
+#close-details {
+    width: 100%;
+}
+
+/* Loading spinner */
+.loading {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--bg-panel);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}

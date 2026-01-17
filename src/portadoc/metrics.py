@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from .models import BBox, Document, Word
+from .models import BBox, Document, Word, HarmonizedWord
 
 
 @dataclass
@@ -154,8 +154,23 @@ def normalize_text(text: str) -> str:
     return text.lower().strip()
 
 
+def harmonized_to_words(harmonized: list[HarmonizedWord]) -> list[Word]:
+    """Convert HarmonizedWord list to Word list for evaluation."""
+    return [
+        Word(
+            word_id=hw.word_id,
+            text=hw.text,
+            bbox=hw.bbox,
+            page=hw.page,
+            engine=hw.source,
+            confidence=hw.confidence,
+        )
+        for hw in harmonized
+    ]
+
+
 def evaluate(
-    predicted: list[Word] | Document,
+    predicted: list[Word] | list[HarmonizedWord] | Document,
     ground_truth: list[Word] | Path | str,
     iou_threshold: float = 0.5,
 ) -> EvaluationResult:
@@ -163,7 +178,7 @@ def evaluate(
     Evaluate predicted words against ground truth.
 
     Args:
-        predicted: Predicted words or Document
+        predicted: Predicted words, HarmonizedWords, or Document
         ground_truth: Ground truth words or path to CSV
         iou_threshold: Minimum IoU for match
 
@@ -173,6 +188,10 @@ def evaluate(
     # Handle Document input
     if isinstance(predicted, Document):
         predicted = predicted.all_words()
+
+    # Handle HarmonizedWord list
+    if predicted and isinstance(predicted[0], HarmonizedWord):
+        predicted = harmonized_to_words(predicted)
 
     # Handle CSV path input
     if isinstance(ground_truth, (str, Path)):

@@ -5,6 +5,15 @@ harmonize:
   # IoU threshold for matching words across engines
   iou_threshold: 0.3
 
+  # Text-aware matching: lower IoU threshold when text matches exactly
+  # This helps match bboxes with slight offsets (PaddleOCR can have ~10px offset)
+  text_match_bonus: 0.15
+
+  # Center distance fallback: if text matches and centers within this distance,
+  # treat as match even with very low IoU. Set to 0 to disable.
+  # Based on analysis: PaddleOCR has up to 7px center offset on average
+  center_distance_max: 12.0
+
   # Status thresholds (determines word/low_conf/pixel status)
   status:
     word_min_conf: 60.0           # >= this = "word" (trust text + bbox)
@@ -20,25 +29,25 @@ harmonize:
   # Secondary engine settings
   secondary:
     vote_min_conf: 40.0           # Min conf to participate in text voting
-    solo_min_conf: 85.0           # Min conf to add word without primary
-    solo_high_conf: 95.0          # Min conf to add without corroboration
+    solo_min_conf: 92.0           # Min conf to add word without primary (raised to reduce FPs)
+    solo_high_conf: 98.0          # Min conf to add without corroboration (raised)
 
     engines:
       easyocr:
         enabled: true
-        weight: 0.6               # Lower weight - bbox is estimated from line
+        weight: 0.9               # Good overall accuracy
         garbage_penalty: 0.1      # Multiplier when garbage detected
-        bbox_type: line           # line or word - affects matching strategy
+        bbox_type: word           # word-level bboxes
       doctr:
-        enabled: false            # Enable when needed
-        weight: 1.1               # Best text accuracy
+        enabled: true             # Best text accuracy (76.57%)
+        weight: 1.1               # Highest text accuracy weight
         garbage_penalty: 0.1
         bbox_type: word
       paddleocr:
-        enabled: false            # Enable when needed
-        weight: 0.5               # Poor on degraded docs
+        enabled: true             # Good general performance
+        weight: 0.8               # Mid-range weight
         garbage_penalty: 0.1
-        bbox_type: line
+        bbox_type: word
 
   # Garbage text detection
   garbage_detection:
