@@ -76,7 +76,22 @@ def main():
     default=0.7,
     help="EasyOCR text detection threshold 0.0-1.0 (default: 0.7)"
 )
-def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool, preprocess: str, psm: int, oem: int, easyocr_decoder: str, easyocr_text_threshold: float):
+@click.option(
+    "--use-paddleocr",
+    is_flag=True,
+    help="Enable PaddleOCR engine (best for degraded documents)"
+)
+@click.option(
+    "--no-tesseract",
+    is_flag=True,
+    help="Disable Tesseract OCR"
+)
+@click.option(
+    "--no-easyocr",
+    is_flag=True,
+    help="Disable EasyOCR"
+)
+def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool, preprocess: str, psm: int, oem: int, easyocr_decoder: str, easyocr_text_threshold: float, use_paddleocr: bool, no_tesseract: bool, no_easyocr: bool):
     """
     Extract words and bounding boxes from a PDF.
 
@@ -111,6 +126,9 @@ def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: 
             tesseract_oem=oem,
             easyocr_decoder=easyocr_decoder,
             easyocr_text_threshold=easyocr_text_threshold,
+            use_paddleocr=use_paddleocr,
+            use_tesseract=not no_tesseract,
+            use_easyocr=not no_easyocr,
             progress_callback=progress_callback if progress else None,
         )
 
@@ -142,23 +160,31 @@ def check():
     """Check OCR engine availability."""
     from .ocr.tesseract import is_tesseract_available, get_tesseract_version
     from .ocr.easyocr import is_easyocr_available, get_easyocr_version
+    from .ocr.paddleocr import is_paddleocr_available, get_paddleocr_version
 
     click.echo("OCR Engine Status:")
     click.echo("-" * 40)
 
     if is_tesseract_available():
         version = get_tesseract_version()
-        click.echo(f"Tesseract: OK (version {version})")
+        click.echo(f"Tesseract:  OK (version {version})")
     else:
-        click.echo("Tesseract: NOT FOUND")
+        click.echo("Tesseract:  NOT FOUND")
         click.echo("  Install with: sudo apt-get install tesseract-ocr tesseract-ocr-eng")
 
     if is_easyocr_available():
         version = get_easyocr_version()
-        click.echo(f"EasyOCR:   OK (version {version})")
+        click.echo(f"EasyOCR:    OK (version {version})")
     else:
-        click.echo("EasyOCR:   NOT FOUND")
+        click.echo("EasyOCR:    NOT FOUND")
         click.echo("  Install with: pip install easyocr")
+
+    if is_paddleocr_available():
+        version = get_paddleocr_version()
+        click.echo(f"PaddleOCR:  OK (version {version})")
+    else:
+        click.echo("PaddleOCR:  NOT FOUND")
+        click.echo("  Install with: pip install paddleocr")
 
 
 @main.command("eval")
@@ -217,6 +243,21 @@ def check():
     default=0.7,
     help="EasyOCR text detection threshold 0.0-1.0 (default: 0.7)"
 )
+@click.option(
+    "--use-paddleocr",
+    is_flag=True,
+    help="Enable PaddleOCR engine (best for degraded documents)"
+)
+@click.option(
+    "--no-tesseract",
+    is_flag=True,
+    help="Disable Tesseract OCR"
+)
+@click.option(
+    "--no-easyocr",
+    is_flag=True,
+    help="Disable EasyOCR"
+)
 def evaluate_cmd(
     pdf_path: Path,
     ground_truth: Path,
@@ -229,6 +270,9 @@ def evaluate_cmd(
     oem: int,
     easyocr_decoder: str,
     easyocr_text_threshold: float,
+    use_paddleocr: bool,
+    no_tesseract: bool,
+    no_easyocr: bool,
 ):
     """
     Evaluate extraction against ground truth CSV.
@@ -243,7 +287,10 @@ def evaluate_cmd(
         doc = extract_words(
             pdf_path, dpi=dpi, triage=triage, preprocess=preprocess,
             tesseract_psm=psm, tesseract_oem=oem,
-            easyocr_decoder=easyocr_decoder, easyocr_text_threshold=easyocr_text_threshold
+            easyocr_decoder=easyocr_decoder, easyocr_text_threshold=easyocr_text_threshold,
+            use_paddleocr=use_paddleocr,
+            use_tesseract=not no_tesseract,
+            use_easyocr=not no_easyocr,
         )
 
         # Evaluate

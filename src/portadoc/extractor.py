@@ -7,6 +7,7 @@ from .models import BBox, Document, Page, Word
 from .pdf import load_pdf
 from .ocr.tesseract import extract_words_tesseract, is_tesseract_available
 from .ocr.easyocr import extract_words_easyocr, is_easyocr_available
+from .ocr.paddleocr import extract_words_paddleocr, is_paddleocr_available
 from .detection import detect_missed_content
 from .harmonize import harmonize_words
 from .preprocess import PreprocessLevel, preprocess_for_ocr, auto_detect_quality
@@ -18,6 +19,7 @@ def extract_words(
     dpi: int = 300,
     use_tesseract: bool = True,
     use_easyocr: bool = True,
+    use_paddleocr: bool = False,
     use_pixel_detection: bool = True,
     gpu: bool = False,
     preprocess: Optional[str] = "auto",
@@ -36,8 +38,9 @@ def extract_words(
         dpi: Resolution for rendering pages
         use_tesseract: Whether to use Tesseract OCR
         use_easyocr: Whether to use EasyOCR
+        use_paddleocr: Whether to use PaddleOCR (default: False, best for degraded docs)
         use_pixel_detection: Whether to use pixel detection fallback
-        gpu: Whether to use GPU for EasyOCR (default: False)
+        gpu: Whether to use GPU for EasyOCR/PaddleOCR (default: False)
         preprocess: Preprocessing level - "none", "light", "standard", "aggressive", or "auto"
         triage: Triage level - "strict", "normal", "permissive", or None (no triage)
         tesseract_psm: Tesseract page segmentation mode (0-13, default 3)
@@ -55,10 +58,11 @@ def extract_words(
     # Check OCR availability
     tesseract_ok = is_tesseract_available() if use_tesseract else False
     easyocr_ok = is_easyocr_available() if use_easyocr else False
+    paddleocr_ok = is_paddleocr_available() if use_paddleocr else False
 
-    if not tesseract_ok and not easyocr_ok:
+    if not tesseract_ok and not easyocr_ok and not paddleocr_ok:
         raise RuntimeError(
-            "No OCR engine available. Install tesseract-ocr or easyocr."
+            "No OCR engine available. Install tesseract-ocr, easyocr, or paddleocr."
         )
 
     word_id_counter = 0
@@ -89,6 +93,7 @@ def extract_words(
             # Extract words from each OCR engine
             tess_words = []
             easy_words = []
+            paddle_words = []
 
             if tesseract_ok:
                 tess_config = f"--psm {tesseract_psm} --oem {tesseract_oem}"
@@ -102,13 +107,29 @@ def extract_words(
                     decoder=easyocr_decoder, text_threshold=easyocr_text_threshold
                 )
 
-            # Harmonize results if both engines available, else use what we have
-            if tess_words and easy_words:
-                ocr_words = harmonize_words(tess_words, easy_words)
-            elif tess_words:
-                ocr_words = tess_words
+            if paddleocr_ok:
+                paddle_words = extract_words_paddleocr(
+                    ocr_image, page_num, page_width, page_height, use_gpu=gpu
+                )
+
+            # Harmonize results: combine all available engines
+            all_engine_words = []
+            if tess_words:
+                all_engine_words.append(tess_words)
+            if easy_words:
+                all_engine_words.append(easy_words)
+            if paddle_words:
+                all_engine_words.append(paddle_words)
+
+            if len(all_engine_words) >= 2:
+                # Harmonize first two, then add third if present
+                ocr_words = harmonize_words(all_engine_words[0], all_engine_words[1])
+                if len(all_engine_words) > 2:
+                    ocr_words = harmonize_words(ocr_words, all_engine_words[2])
+            elif len(all_engine_words) == 1:
+                ocr_words = all_engine_words[0]
             else:
-                ocr_words = easy_words
+                ocr_words = []
 
             # Assign word IDs to OCR words and add to page
             for word in ocr_words:

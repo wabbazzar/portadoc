@@ -1,6 +1,6 @@
 # Portadoc Fix Plan
 
-## High Priority (Core Pipeline)
+## High Priority (Core Pipeline) - DONE
 
 - [x] Set up Python project structure with requirements.txt
 - [x] Install Python dependencies (pymupdf, pytesseract, opencv-python-headless, numpy, click, easyocr)
@@ -12,23 +12,12 @@
 - [x] Implement pixel detection fallback for OCR misses
 - [x] Install tesseract-ocr binary (tesseract 5.3.4 verified working)
 
-## Medium Priority (Quality Improvements)
+## Medium Priority (Quality Improvements) - DONE
 
 - [x] Implement OpenCV preprocessing pipeline
-  - Implemented in preprocess.py: grayscale, denoise, CLAHE contrast, sharpen, binarize
-  - Levels: none, light, standard, aggressive, auto
-  - Auto-detection uses Laplacian variance + contrast std
 - [x] Build OCR result harmonization logic (Tesseract + EasyOCR)
-  - Implemented in harmonize.py: matches by IoU, votes on text, merges confidences
 - [x] Add confidence-based triage system
-  - Implemented in triage.py: strict, normal, permissive levels
-  - Filters by: min confidence, text length, aspect ratio, area, punctuation
-  - CLI: --triage flag (strict|normal|permissive)
-  - Results: no triage=418, permissive=415, normal=407, strict=402 (GT=401)
 - [x] Create evaluation metrics (recall, precision, IoU vs ground truth)
-  - Implemented in metrics.py: precision, recall, F1, mean IoU, text match rate
-  - CLI: `eval` command compares extraction to ground truth CSV
-  - Results (no triage): 98.50% recall, 94.50% precision, 96.46% F1
 
 ## Low Priority (Web Service & Polish) - DONE
 
@@ -39,121 +28,91 @@
 
 ---
 
-## CURRENT FOCUS: Degraded Document Performance
+## CURRENT FOCUS: Achieve 95%+ Accuracy on Degraded Documents
 
-**Baseline (peter_lou_50dpi.pdf):** 51.61% precision, 55.86% recall, 53.65% F1, 22.77% text match
-**Target:** Match clean PDF performance (~95% F1, ~90% text match)
+**Current Best (peter_lou_50dpi.pdf):** 81.45% F1, 40.11% text match
+**Target:** 95%+ F1, 90%+ text match (comparable to AWS Textract's 99%)
 
-### Key Files
-- `src/portadoc/cli.py` - CLI commands (extract, eval, serve)
-- `src/portadoc/preprocess.py` - OpenCV preprocessing (exists but not wired to CLI)
-- `src/portadoc/extractor.py` - Main extraction pipeline
-- `src/portadoc/ocr/tesseract.py` - Tesseract wrapper
-- `src/portadoc/ocr/easyocr.py` - EasyOCR wrapper
-- `src/portadoc/harmonize.py` - Multi-engine result fusion
-- `src/portadoc/metrics.py` - Evaluation metrics
+### Phase 1: Implement PaddleOCR Engine (DONE)
+- [x] Create `src/portadoc/ocr/paddleocr.py` wrapper
+  - Use `from paddleocr import PaddleOCR`
+  - Initialize with `use_angle_cls=True, lang='en', use_gpu=False`
+  - Extract word-level boxes and text from result structure
+  - Return list of Word objects matching existing interface
+- [x] Add `is_paddleocr_available()` function
+- [x] Add `--use-paddleocr` flag to CLI extract command
+- [x] Test PaddleOCR standalone on degraded PDF, record metrics
+- [x] Integrated into extractor.py with 3-engine harmonization
 
-### Phase 1: Wire Up Preprocessing to CLI - DONE
-- [x] Add `--preprocess` flag to `extract` command in cli.py (none|light|standard|aggressive|auto)
-- [x] Add `--preprocess` flag to `eval` command in cli.py
-- [x] Test all preprocess levels on degraded PDF, record metrics in this file
-- [x] Verify `--dpi` flag works for upscaling (already exists, test if it helps degraded docs)
+**PaddleOCR Results (degraded PDF, preprocess=none):**
+| Config | Precision | Recall | F1 | Text Match |
+|--------|-----------|--------|-----|------------|
+| PaddleOCR only | 44.66% | 28.18% | 34.56% | 38.94% |
+| Tess+Easy (baseline) | 76.54% | 87.03% | 81.45% | 40.11% |
+| Tess+Easy+Paddle | 71.37% | 87.03% | 78.43% | 35.24% |
 
-**Preprocessing Results (degraded 50dpi PDF, DPI=300):**
-| Preprocess | Precision | Recall | F1 | Text Match |
-|------------|-----------|--------|-----|------------|
-| none | **70.39%** | 84.79% | **76.92%** | **38.53%** |
-| light | 68.36% | **87.28%** | 76.67% | 33.43% |
-| standard | 66.03% | 86.28% | 74.81% | 30.92% |
-| aggressive | 30.21% | 21.70% | 25.25% | 3.45% |
-| auto | 51.61% | 55.86% | 53.65% | 22.77% |
+**KEY INSIGHT:** PaddleOCR underperforms on this degraded doc. Adding it to harmonization reduces F1 due to more false positives. The problem is image quality, not OCR engines - need super-resolution.
 
-**KEY INSIGHT:** `preprocess=none` performs BEST on degraded docs. Auto-detection incorrectly applies aggressive preprocessing.
+### Phase 2: Implement Image Super-Resolution (HIGH PRIORITY)
+- [ ] Create `src/portadoc/superres.py` module
+  - Implement `upscale_image(image, scale=4, method='opencv_dnn')` function
+  - Support methods: 'bicubic', 'lanczos', 'opencv_dnn'
+  - For OpenCV DNN: use `cv2.dnn_superres.DnnSuperResImpl_create()` with ESPCN/FSRCNN models
+  - Download models from: https://github.com/fannymonori/TF-ESPCN or use cv2's built-in
+  - NOTE: RealESRGAN has torchvision compatibility issues - use OpenCV DNN instead
+- [ ] Add `--upscale` flag to CLI (none, 2x, 4x)
+- [ ] Apply super-resolution BEFORE preprocessing and OCR
+- [ ] Test on degraded PDF, record metrics
 
-**DPI Scaling Results (preprocess=none):**
-| DPI | Precision | Recall | F1 | Text Match |
-|-----|-----------|--------|-----|------------|
-| 72 | 59.10% | 59.10% | 59.10% | 58.65% |
-| 100 | 63.21% | 69.83% | 66.35% | **69.29%** |
-| 150 | 68.48% | 81.80% | 74.55% | 50.30% |
-| 300 | 70.39% | 84.79% | 76.92% | 38.53% |
-| 600 | 63.79% | 83.04% | 72.16% | 34.53% |
+### Phase 3: Implement docTR Engine (MEDIUM PRIORITY)
+- [ ] Create `src/portadoc/ocr/doctr_ocr.py` wrapper
+  - Use `from doctr.models import ocr_predictor`
+  - Initialize with `pretrained=True`
+  - Extract word-level boxes from document result
+  - Return list of Word objects
+- [ ] Add `is_doctr_available()` function
+- [ ] Add `--use-doctr` flag to CLI
+- [ ] Test docTR standalone on degraded PDF, record metrics
 
-**KEY INSIGHT:** Lower DPI (100-150) improves text match rate. DPI 100 + preprocess=none achieves **69.29% text match** (best so far)
+### Phase 4: Fix "degraded" Preprocessing Level
+- [ ] In `preprocess.py`: implement the DEGRADED case in `preprocess_for_ocr()`
+  - Currently defined in enum but not handled (falls through to else)
+  - Should: upscale 2x with Lanczos → bilateral filter → CLAHE → unsharp mask
+- [ ] Update `auto_detect_quality()` to return DEGRADED for very low quality images
+  - Detect low DPI by checking image dimensions vs expected page size
+  - If laplacian_var < 50, return DEGRADED instead of AGGRESSIVE
 
-### Phase 2: Tune Preprocessing for Degraded Docs
-- [ ] In preprocess.py: experiment with CLAHE clip limit (currently 2.0, try 1.0-4.0)
-- [ ] In preprocess.py: test denoise h parameter (currently 10, try 5-30)
-- [ ] In preprocess.py: try adaptive thresholding vs Otsu for binarization
-- [ ] Add cv2.resize upscaling (INTER_CUBIC or INTER_LANCZOS4) before OCR
-- [ ] Test different sharpening kernel strengths
+### Phase 5: Enhanced Multi-Engine Harmonization
+- [ ] Update `harmonize.py` to support 3+ OCR engines
+  - Current: takes tess_words, easy_words
+  - New: take list of (engine_name, words) tuples
+  - Implement voting across all engines for each word region
+- [ ] Add weighted voting based on engine confidence and known accuracy
+- [ ] Test 3-engine (Tesseract + EasyOCR + PaddleOCR) harmonization
 
-### Phase 3: OCR Engine Tuning - DONE
-- [x] Add `--psm` and `--oem` CLI flags, pass to tesseract wrapper
-- [x] In tesseract.py: test PSM modes 6 (block), 11 (sparse), 12 (sparse + OSD)
-- [x] In tesseract.py: test OEM 0 (legacy), 1 (LSTM), 2 (combined)
-  - OEM 0/2 require legacy traineddata (not installed), only OEM 1/3 work
-- [x] Add `--easyocr-decoder` and `--easyocr-text-threshold` CLI flags
-- [x] In easyocr.py: test decoder='beamsearch' (currently 'greedy')
-  - beamsearch slightly worse than greedy (77.78% vs 77.95%)
-- [x] In easyocr.py: tune text_threshold (default 0.7)
-  - **text_threshold=0.95 achieves 81.45% F1!**
-
-**PSM Mode Results (preprocess=none, DPI=300):**
-| PSM | Precision | Recall | F1 | Text Match |
-|-----|-----------|--------|-----|------------|
-| 3 (default) | 70.39% | 84.79% | 76.92% | 38.53% |
-| **6 (block)** | 70.42% | 87.28% | **77.95%** | 40.29% |
-| 11 (sparse) | 67.51% | 86.53% | 75.85% | 39.77% |
-| 12 (sparse+OSD) | 66.60% | 86.03% | 75.08% | 39.42% |
-
-**EasyOCR Text Threshold Results (PSM=6, preprocess=none):**
-| text_threshold | Precision | Recall | F1 | Text Match |
-|----------------|-----------|--------|-----|------------|
-| 0.7 (default) | 70.42% | 87.28% | 77.95% | 40.29% |
-| 0.9 | 73.01% | 87.03% | 79.41% | 40.40% |
-| **0.95** | 76.54% | 87.03% | **81.45%** | 40.11% |
-| 0.98 | 77.11% | 86.53% | 81.55% | 40.35% |
-
-**KEY INSIGHT:** Higher EasyOCR text_threshold (0.95-0.98) dramatically improves F1 by reducing false positives.
-
-**Best Configuration Found:**
-- `--preprocess none --psm 6 --easyocr-text-threshold 0.95`
-- Degraded PDF: **81.45% F1** (target: 80% ✓)
-- Clean PDF: **97.29% F1** (no regression ✓)
-
-### Phase 4: Alternative OCR Engines
-- [ ] Install PaddleOCR: `pip install paddlepaddle paddleocr`
-  - Create src/portadoc/ocr/paddleocr.py wrapper
-  - PaddleOCR is known for excellent degraded doc handling
-- [ ] Install docTR: `pip install python-doctr`
-  - Create src/portadoc/ocr/doctr.py wrapper
-- [ ] Benchmark each engine standalone on degraded PDF
-- [ ] Add best performer to harmonize.py pipeline
-
-### Phase 5: Bounding Box Accuracy
-- [ ] In extractor.py: improve coord scaling when source DPI differs from render DPI
-- [ ] Add sub-pixel bbox interpolation for low-res → high-res scaling
-- [ ] In metrics.py: test IoU thresholds (currently 0.5, try 0.3-0.7) for degraded matching
-
-### Validation Command
-After each change, run:
+### Validation Commands
 ```bash
-PYTHONPATH=src python3 -m portadoc.cli eval data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv
+# Activate venv first
+source .venv/bin/activate
+
+# Test single engine
+portadoc eval data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv --use-paddleocr --no-tesseract --no-easyocr
+
+# Test with super-resolution
+portadoc eval data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv --upscale 4x
+
+# Test full pipeline
+portadoc eval data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv
 ```
 
 ### Success Criteria
-- [x] F1 Score > 80% on degraded PDF ✓ (81.45% achieved)
-- [ ] Text Match Rate > 60% on degraded PDF (40.11% - needs bbox work)
-- [x] No regression on clean PDF (maintain ~96% F1) ✓ (97.29% achieved)
+- [ ] F1 Score > 95% on degraded PDF
+- [ ] Text Match Rate > 90% on degraded PDF
+- [ ] No regression on clean PDF (maintain ~96% F1)
 
-## Notes
+---
 
-- CPU-only constraint - no CUDA/GPU dependencies
-- Bounding boxes must be in PDF coordinate space (points, origin top-left)
-- Target: 401 words across 3 pages matching ground truth
-
-## Baseline Results
+## Historical Results
 
 **Clean PDF (peter_lou.pdf):**
 | Config | Precision | Recall | F1 | Words |
@@ -164,6 +123,22 @@ PYTHONPATH=src python3 -m portadoc.cli eval data/input/peter_lou_50dpi.pdf data/
 | Config | Precision | Recall | F1 | Text Match |
 |--------|-----------|--------|-----|------------|
 | auto (old default) | 51.61% | 55.86% | 53.65% | 22.77% |
-| none, DPI=100 | 63.21% | 69.83% | 66.35% | **69.29%** |
+| none, DPI=100 | 63.21% | 69.83% | 66.35% | 69.29% |
 | none, PSM=6, DPI=300 | 70.42% | 87.28% | 77.95% | 40.29% |
-| **none, PSM=6, text_ths=0.95** | 76.54% | 87.03% | **81.45%** | 40.11% |
+| none, PSM=6, text_ths=0.95 | 76.54% | 87.03% | 81.45% | 40.11% |
+
+**Key Insights from Previous Work:**
+- `preprocess=none` outperforms all preprocessing on already-degraded images
+- Lower DPI (100) improves text match but hurts F1
+- Tesseract PSM 6 (block mode) works best
+- EasyOCR text_threshold=0.95 reduces false positives significantly
+- The core problem: 50 DPI source is too low for Tesseract/EasyOCR
+- Solution: Real super-resolution + better OCR engines (PaddleOCR)
+
+## Notes
+
+- CPU-only constraint - no CUDA/GPU dependencies
+- Virtual environment at `.venv/` - activate with `source .venv/bin/activate`
+- Bounding boxes must be in PDF coordinate space (points, origin top-left)
+- Target: 401 words across 3 pages matching ground truth
+- AWS Textract achieves ~99% on this document - that's our benchmark
