@@ -9,16 +9,15 @@
 - [x] Implement EasyOCR wrapper with word-level output
 - [x] Build coordinate transformation (image coords → PDF coords)
 - [x] Create basic CLI with `extract` command
+- [x] Implement pixel detection fallback for OCR misses
 - [ ] **BLOCKED**: Install tesseract-ocr binary - needs sudo: `sudo apt-get install tesseract-ocr tesseract-ocr-eng`
 
 ## Medium Priority (Quality Improvements)
 
 - [ ] Implement OpenCV preprocessing pipeline
   - Grayscale, denoising, contrast enhancement, binarization
-- [ ] Build OCR result harmonization logic
+- [ ] Build OCR result harmonization logic (Tesseract + EasyOCR)
   - Merge overlapping boxes, vote on text content
-- [ ] Implement pixel detection fallback for OCR misses
-  - Contour detection for text-like regions
 - [ ] Add confidence-based triage system
 - [ ] Create evaluation metrics (recall, precision, IoU vs ground truth)
 
@@ -39,17 +38,26 @@
 
 ## Validation Results
 
-**EasyOCR extraction test (peter_lou.pdf):**
-- Ground truth: 401 words
-- EasyOCR output: 378 words
-- Gap: 23 words (~94% recall)
+**Latest extraction test (peter_lou.pdf with EasyOCR + pixel detection):**
+- Ground truth: 401 entries
+- Our output: 385 entries
+- OCR words: 378
+- Pixel detector regions: 7 (3 match ground truth, 4 extra detections)
 
-Missing items likely include:
-- Pixel detector regions (logos, signatures)
-- Some low-confidence text
-- Small punctuation marks
+**Pixel detector accuracy:**
+- Page 0 logo: ✓ detected (bbox matches within 1-2 pts)
+- Page 0 horizontal line: ✓ detected
+- Page 2 vertical line: ✓ detected
 
-Next step: Implement pixel detection fallback and OCR harmonization to improve recall.
+**Missing content analysis:**
+- Most differences are OCR transcription variations (e.g., `10.28` vs `10:28`)
+- Single-character entries (`e`, `o`, `i`) not detected - likely low-confidence
+- Some multi-word items split differently
+
+**Next steps to improve recall:**
+1. Install Tesseract for better OCR accuracy
+2. Implement harmonization to combine Tesseract + EasyOCR results
+3. Tune pixel detection to reduce false positives
 
 ## Notes
 

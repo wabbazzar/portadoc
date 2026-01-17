@@ -6,6 +6,7 @@ from .models import BBox, Document, Page, Word
 from .pdf import load_pdf
 from .ocr.tesseract import extract_words_tesseract, is_tesseract_available
 from .ocr.easyocr import extract_words_easyocr, is_easyocr_available
+from .detection import detect_missed_content
 
 
 def extract_words(
@@ -13,6 +14,7 @@ def extract_words(
     dpi: int = 300,
     use_tesseract: bool = True,
     use_easyocr: bool = True,
+    use_pixel_detection: bool = True,
     gpu: bool = False,
 ) -> Document:
     """
@@ -23,6 +25,7 @@ def extract_words(
         dpi: Resolution for rendering pages
         use_tesseract: Whether to use Tesseract OCR
         use_easyocr: Whether to use EasyOCR
+        use_pixel_detection: Whether to use pixel detection fallback
         gpu: Whether to use GPU for EasyOCR (default: False)
 
     Returns:
@@ -50,29 +53,43 @@ def extract_words(
                 height=page_height,
             )
 
-            all_words = []
+            ocr_words = []
 
             # Extract words using Tesseract
             if tesseract_ok:
                 tess_words = extract_words_tesseract(
                     image, page_num, page_width, page_height
                 )
-                all_words.extend(tess_words)
+                ocr_words.extend(tess_words)
 
-            # Extract words using EasyOCR (if Tesseract not available or for comparison)
+            # Extract words using EasyOCR (if Tesseract not available)
             if easyocr_ok and not tesseract_ok:
                 easy_words = extract_words_easyocr(
                     image, page_num, page_width, page_height, gpu=gpu
                 )
-                all_words.extend(easy_words)
+                ocr_words.extend(easy_words)
 
-            # Assign word IDs and add to page
-            for word in all_words:
+            # Assign word IDs to OCR words and add to page
+            for word in ocr_words:
                 word.word_id = word_id_counter
                 word_id_counter += 1
                 # Clear engine field for single-engine output
                 word.engine = ""
                 page.words.append(word)
+
+            # Pixel detection fallback for missed content
+            if use_pixel_detection:
+                existing_bboxes = [w.bbox for w in page.words]
+                pixel_words = detect_missed_content(
+                    image, page_num, page_width, page_height,
+                    existing_bboxes=existing_bboxes
+                )
+
+                # Assign word IDs to pixel-detected regions
+                for word in pixel_words:
+                    word.word_id = word_id_counter
+                    word_id_counter += 1
+                    page.words.append(word)
 
             doc.pages.append(page)
 
