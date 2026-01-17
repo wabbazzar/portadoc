@@ -358,7 +358,6 @@ async function onExtract() {
         preprocess: document.getElementById('cfg-preprocess').value,
         psm: parseInt(document.getElementById('cfg-psm').value),
         oem: parseInt(document.getElementById('cfg-oem').value),
-        smart: document.getElementById('cfg-smart').checked,
     };
 
     try {

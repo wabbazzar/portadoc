@@ -27,7 +27,6 @@ class ExtractionRequest(BaseModel):
     preprocess: str = "none"
     psm: int = 6
     oem: int = 3
-    smart: bool = True
 
 
 class WordData(BaseModel):
@@ -177,7 +176,7 @@ async def get_words(filename: str):
 @router.post("/api/extract")
 async def extract_pdf(request: ExtractionRequest):
     """Run extraction on a PDF with specified settings."""
-    from ..extractor import extract_words_smart
+    from ..extractor import extract_words
     from ..output import write_harmonized_csv
 
     pdf_path = Path(request.pdf_path)
@@ -190,8 +189,8 @@ async def extract_pdf(request: ExtractionRequest):
     output_path = get_output_path(pdf_path)
 
     try:
-        # Run extraction with smart harmonization
-        harmonized_words = extract_words_smart(
+        # Run extraction
+        harmonized_words = extract_words(
             pdf_path=pdf_path,
             dpi=300,
             use_tesseract=request.use_tesseract,
