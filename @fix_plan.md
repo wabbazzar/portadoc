@@ -37,7 +37,11 @@
   - POST /extract accepts PDF upload, returns JSON with words and bounding boxes
   - Supports dpi, triage, preprocess query parameters
   - CLI: `portadoc serve --host 0.0.0.0 --port 8000`
-- [ ] Add async job processing for large PDFs
+- [x] Add async job processing for large PDFs
+  - POST /jobs submits PDF for background processing
+  - GET /jobs/{job_id} polls for status and result
+  - GET /jobs lists all jobs, DELETE /jobs/{job_id} cleans up
+  - Uses ThreadPoolExecutor with 2 workers for CPU-bound OCR
 - [x] Implement JSON output format (in output.py)
 - [ ] Add progress reporting for CLI
 - [ ] Research additional CPU-compatible OCRs (PaddleOCR, docTR)
