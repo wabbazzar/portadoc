@@ -32,7 +32,11 @@
 
 ## Low Priority (Web Service & Polish)
 
-- [ ] Build FastAPI REST endpoints
+- [x] Build FastAPI REST endpoints
+  - Implemented in api.py: /health, /extract, / endpoints
+  - POST /extract accepts PDF upload, returns JSON with words and bounding boxes
+  - Supports dpi, triage, preprocess query parameters
+  - CLI: `portadoc serve --host 0.0.0.0 --port 8000`
 - [ ] Add async job processing for large PDFs
 - [x] Implement JSON output format (in output.py)
 - [ ] Add progress reporting for CLI

@@ -166,5 +166,37 @@ def evaluate_cmd(
         sys.exit(1)
 
 
+@main.command()
+@click.option(
+    "--host",
+    default="127.0.0.1",
+    help="Host to bind to (default: 127.0.0.1)"
+)
+@click.option(
+    "--port",
+    default=8000,
+    type=int,
+    help="Port to bind to (default: 8000)"
+)
+@click.option(
+    "--reload",
+    is_flag=True,
+    help="Enable auto-reload for development"
+)
+def serve(host: str, port: int, reload: bool):
+    """Start the FastAPI REST server."""
+    import uvicorn
+
+    click.echo(f"Starting Portadoc API server at http://{host}:{port}")
+    click.echo("API docs available at /docs")
+
+    uvicorn.run(
+        "portadoc.api:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
 if __name__ == "__main__":
     main()
