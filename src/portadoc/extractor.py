@@ -10,14 +10,14 @@ from .ocr.easyocr import extract_words_easyocr, is_easyocr_available
 from .ocr.paddleocr import extract_words_paddleocr, is_paddleocr_available
 from .ocr.doctr_ocr import extract_words_doctr, is_doctr_available
 from .detection import detect_missed_content
-from .harmonize import harmonize_words, harmonize_multi_engine, smart_harmonize
+from .harmonize import harmonize
 from .preprocess import PreprocessLevel, preprocess_for_ocr, auto_detect_quality
 from .superres import upscale_image
 from .triage import TriageLevel, triage_words
 from .config import PortadocConfig, get_config, load_config
 
 
-def extract_words_smart(
+def extract_words(
     pdf_path: str | Path,
     dpi: int = 300,
     use_tesseract: bool = True,
@@ -37,7 +37,7 @@ def extract_words_smart(
     progress_callback: Optional[callable] = None,
 ) -> list[HarmonizedWord]:
     """
-    Extract words using smart harmonization with full tracking.
+    Extract words from a PDF using smart harmonization with full tracking.
 
     Uses Tesseract as primary engine for word boundaries.
     Secondary engines vote on text only and can add high-confidence detections.
@@ -78,7 +78,7 @@ def extract_words_smart(
 
     if not tesseract_ok:
         raise RuntimeError(
-            "Smart harmonization requires Tesseract as primary engine. Install tesseract-ocr."
+            "Tesseract is required as primary engine. Install tesseract-ocr."
         )
 
     all_harmonized: list[HarmonizedWord] = []
@@ -133,8 +133,8 @@ def extract_words_smart(
                 )
                 secondary_results["doctr"] = doctr_words
 
-            # Smart harmonize
-            page_harmonized = smart_harmonize(primary_words, secondary_results, config)
+            # Harmonize results
+            page_harmonized = harmonize(primary_words, secondary_results, config)
 
             # Pixel detection fallback for missed content
             if use_pixel_detection:
@@ -152,7 +152,7 @@ def extract_words_smart(
                         bbox=pw.bbox,
                         text=pw.text,
                         status="pixel",
-                        source="X",  # X for pixel detection
+                        source="PX",  # PX for pixel detection
                         confidence=pw.confidence or 0,
                     )
                     page_harmonized.append(hw)
@@ -174,7 +174,7 @@ def extract_words_smart(
     return all_harmonized
 
 
-def extract_words(
+def extract_document(
     pdf_path: str | Path,
     dpi: int = 300,
     use_tesseract: bool = True,
@@ -191,15 +191,20 @@ def extract_words(
     tesseract_oem: int = 3,
     easyocr_decoder: str = "greedy",
     easyocr_text_threshold: float = 0.7,
+    config_path: Optional[str | Path] = None,
     progress_callback: Optional[callable] = None,
 ) -> Document:
     """
-    Extract words from a PDF document.
+    Extract words from a PDF and return as Document object.
+
+    This is a convenience wrapper around extract_words() that returns
+    a Document object for backward compatibility with APIs expecting
+    the Document format.
 
     Args:
         pdf_path: Path to PDF file
         dpi: Resolution for rendering pages
-        use_tesseract: Whether to use Tesseract OCR
+        use_tesseract: Whether to use Tesseract OCR (primary engine)
         use_easyocr: Whether to use EasyOCR
         use_paddleocr: Whether to use PaddleOCR (default: False)
         use_doctr: Whether to use docTR OCR (default: False)
@@ -213,122 +218,64 @@ def extract_words(
         tesseract_oem: Tesseract OCR engine mode (0-3, default 3)
         easyocr_decoder: EasyOCR decoder - "greedy" or "beamsearch" (default: greedy)
         easyocr_text_threshold: EasyOCR text detection threshold (default: 0.7)
+        config_path: Path to config file (uses default if None)
         progress_callback: Optional callback(page_num, total_pages, stage) for progress reporting
 
     Returns:
         Document with extracted words
     """
     pdf_path = Path(pdf_path)
+
+    # Extract harmonized words
+    harmonized_words = extract_words(
+        pdf_path=pdf_path,
+        dpi=dpi,
+        use_tesseract=use_tesseract,
+        use_easyocr=use_easyocr,
+        use_paddleocr=use_paddleocr,
+        use_doctr=use_doctr,
+        use_pixel_detection=use_pixel_detection,
+        gpu=gpu,
+        preprocess=preprocess,
+        upscale=upscale,
+        upscale_method=upscale_method,
+        tesseract_psm=tesseract_psm,
+        tesseract_oem=tesseract_oem,
+        easyocr_decoder=easyocr_decoder,
+        easyocr_text_threshold=easyocr_text_threshold,
+        config_path=config_path,
+        progress_callback=progress_callback,
+    )
+
+    # Convert to Document
     doc = Document(filename=pdf_path.name)
 
-    # Check OCR availability
-    tesseract_ok = is_tesseract_available() if use_tesseract else False
-    easyocr_ok = is_easyocr_available() if use_easyocr else False
-    paddleocr_ok = is_paddleocr_available() if use_paddleocr else False
-    doctr_ok = is_doctr_available() if use_doctr else False
+    # Group words by page
+    pages_dict: dict[int, list[Word]] = {}
+    for hw in harmonized_words:
+        if hw.page not in pages_dict:
+            pages_dict[hw.page] = []
 
-    if not tesseract_ok and not easyocr_ok and not paddleocr_ok and not doctr_ok:
-        raise RuntimeError(
-            "No OCR engine available. Install tesseract-ocr, easyocr, paddleocr, or python-doctr."
+        # Convert HarmonizedWord to Word
+        word = Word(
+            word_id=hw.word_id,
+            text=hw.text,
+            bbox=hw.bbox,
+            page=hw.page,
+            engine=hw.source,
+            confidence=hw.confidence,
         )
+        pages_dict[hw.page].append(word)
 
-    word_id_counter = 0
-
+    # Create Page objects (we need page dimensions from PDF)
     with load_pdf(pdf_path, dpi=dpi) as pdf:
-        total_pages = len(pdf)
-
-        for page_num, image, page_width, page_height in pdf.pages():
-            # Report progress: starting page
-            if progress_callback:
-                progress_callback(page_num, total_pages, "processing")
-
+        for page_num, _, page_width, page_height in pdf.pages():
             page = Page(
                 page_number=page_num,
                 width=page_width,
                 height=page_height,
             )
-
-            # Apply super-resolution if requested (before preprocessing)
-            ocr_image = image
-            if upscale and upscale > 1:
-                ocr_image = upscale_image(ocr_image, scale=upscale, method=upscale_method)
-
-            # Apply preprocessing if requested
-            if preprocess and preprocess != "none":
-                if preprocess == "auto":
-                    level = auto_detect_quality(ocr_image)
-                else:
-                    level = PreprocessLevel(preprocess)
-                ocr_image = preprocess_for_ocr(ocr_image, level=level, return_rgb=True)
-
-            # Extract words from each OCR engine
-            tess_words = []
-            easy_words = []
-            paddle_words = []
-            doctr_words = []
-
-            if tesseract_ok:
-                tess_config = f"--psm {tesseract_psm} --oem {tesseract_oem}"
-                tess_words = extract_words_tesseract(
-                    ocr_image, page_num, page_width, page_height, config=tess_config
-                )
-
-            if easyocr_ok:
-                easy_words = extract_words_easyocr(
-                    ocr_image, page_num, page_width, page_height, gpu=gpu,
-                    decoder=easyocr_decoder, text_threshold=easyocr_text_threshold
-                )
-
-            if paddleocr_ok:
-                paddle_words = extract_words_paddleocr(
-                    ocr_image, page_num, page_width, page_height, use_gpu=gpu
-                )
-
-            if doctr_ok:
-                doctr_words = extract_words_doctr(
-                    ocr_image, page_num, page_width, page_height
-                )
-
-            # Harmonize results: combine all available engines using multi-engine voting
-            engine_results: list[tuple[str, list[Word]]] = []
-            if tess_words:
-                engine_results.append(("tesseract", tess_words))
-            if easy_words:
-                engine_results.append(("easyocr", easy_words))
-            if paddle_words:
-                engine_results.append(("paddleocr", paddle_words))
-            if doctr_words:
-                engine_results.append(("doctr", doctr_words))
-
-            if len(engine_results) >= 2:
-                # Use multi-engine harmonization with weighted voting
-                ocr_words = harmonize_multi_engine(engine_results)
-            elif len(engine_results) == 1:
-                ocr_words = engine_results[0][1]
-            else:
-                ocr_words = []
-
-            # Assign word IDs to OCR words and add to page
-            for word in ocr_words:
-                word.word_id = word_id_counter
-                word_id_counter += 1
-                word.engine = ""  # Harmonized output
-                page.words.append(word)
-
-            # Pixel detection fallback for missed content
-            if use_pixel_detection:
-                existing_bboxes = [w.bbox for w in page.words]
-                pixel_words = detect_missed_content(
-                    image, page_num, page_width, page_height,
-                    existing_bboxes=existing_bboxes
-                )
-
-                # Assign word IDs to pixel-detected regions
-                for word in pixel_words:
-                    word.word_id = word_id_counter
-                    word_id_counter += 1
-                    page.words.append(word)
-
+            page.words = pages_dict.get(page_num, [])
             doc.pages.append(page)
 
     # Apply triage filtering if requested
@@ -351,7 +298,13 @@ def extract_to_csv(
     pdf_path: str | Path,
     output_path: str | Path,
     dpi: int = 300,
-) -> Document:
+    use_easyocr: bool = True,
+    use_paddleocr: bool = False,
+    use_doctr: bool = False,
+    preprocess: Optional[str] = "none",
+    tesseract_psm: int = 6,
+    tesseract_oem: int = 3,
+) -> list[HarmonizedWord]:
     """
     Extract words from PDF and write to CSV.
 
@@ -359,12 +312,31 @@ def extract_to_csv(
         pdf_path: Path to input PDF
         output_path: Path to output CSV
         dpi: Resolution for rendering
+        use_easyocr: Whether to use EasyOCR
+        use_paddleocr: Whether to use PaddleOCR
+        use_doctr: Whether to use docTR
+        preprocess: Preprocessing level
+        tesseract_psm: Tesseract page segmentation mode
+        tesseract_oem: Tesseract OCR engine mode
 
     Returns:
-        Document with extracted words
+        List of HarmonizedWord
     """
-    from .output import write_csv
+    from .output import write_harmonized_csv
 
-    doc = extract_words(pdf_path, dpi=dpi)
-    write_csv(doc, output_path)
-    return doc
+    words = extract_words(
+        pdf_path,
+        dpi=dpi,
+        use_easyocr=use_easyocr,
+        use_paddleocr=use_paddleocr,
+        use_doctr=use_doctr,
+        preprocess=preprocess,
+        tesseract_psm=tesseract_psm,
+        tesseract_oem=tesseract_oem,
+    )
+    write_harmonized_csv(words, output_path)
+    return words
+
+
+# Backward compatibility alias
+extract_words_smart = extract_words

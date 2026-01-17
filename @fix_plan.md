@@ -179,7 +179,7 @@ make serve-web  # Then open http://localhost:8000
 
 ## Notes
 
-- Always use all 4 engines for testing Task 1: `--smart --use-paddleocr --use-doctr`
+- Always use all 4 engines for testing Task 1: `--use-paddleocr --use-doctr`
 - Ground truth: `data/input/peter_lou_words_slim.csv` (401 words)
 - CPU-only constraint - no GPU/CUDA dependencies
 - Update Makefile when adding new commands

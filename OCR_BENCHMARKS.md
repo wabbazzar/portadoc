@@ -44,8 +44,8 @@
 
 | Use Case | Command |
 |----------|---------|
-| Redaction (bbox accuracy) | `--smart --no-easyocr --preprocess none --psm 6` |
-| Text extraction (text accuracy) | `--smart --use-paddleocr --use-doctr` |
+| Redaction (bbox accuracy) | `--no-easyocr --preprocess none --psm 6` |
+| Text extraction (text accuracy) | `--use-paddleocr --use-doctr` |
 
 ## Per-Engine Word Counts (Clean PDF, Page 0)
 

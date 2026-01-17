@@ -298,13 +298,34 @@ function onCanvasClick(event) {
     }
 }
 
+// Source code legend
+const SOURCE_NAMES = {
+    'T': 'Tesseract',
+    'E': 'EasyOCR',
+    'D': 'docTR',
+    'P': 'PaddleOCR',
+    'PX': 'Pixel Detection',
+    'X': 'Pixel Detection',  // Legacy
+};
+
+function decodeSource(source) {
+    if (!source) return '-';
+    // Handle "PX" as a unit first
+    if (source === 'PX' || source === 'X') {
+        return SOURCE_NAMES[source];
+    }
+    // Decode each letter for combined sources like "TE", "TEP"
+    const parts = source.split('').map(c => SOURCE_NAMES[c] || c);
+    return parts.join(' + ');
+}
+
 function showWordDetails(word) {
     const detailsBody = document.getElementById('details-body');
     detailsBody.innerHTML = `
         <p><strong>Word ID:</strong> ${word.word_id}</p>
         <p><strong>Text:</strong> ${escapeHtml(word.text)}</p>
         <p><strong>Status:</strong> <span class="status-${word.status}">${word.status}</span></p>
-        <p><strong>Source:</strong> ${word.source}</p>
+        <p><strong>Source:</strong> ${decodeSource(word.source)} <span style="opacity: 0.6">(${word.source})</span></p>
         <p><strong>Confidence:</strong> ${word.confidence.toFixed(1)}%</p>
         <p><strong>Bbox:</strong> (${word.x0.toFixed(1)}, ${word.y0.toFixed(1)}) - (${word.x1.toFixed(1)}, ${word.y1.toFixed(1)})</p>
         <hr style="margin: 1rem 0; border-color: var(--bg-panel);">

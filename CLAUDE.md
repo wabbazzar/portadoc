@@ -62,7 +62,7 @@ The `tmp/` directory is for temporary scripts, scratch files, and one-off utilit
 
 ### For bbox accuracy (redaction):
 ```bash
-portadoc extract --smart --no-easyocr --preprocess none --psm 6 <pdf>
+portadoc extract --no-easyocr --preprocess none --psm 6 <pdf>
 # Or: make extract-smart PDF=<pdf>
 ```
 - Clean PDFs: **99.00% F1**, 98.74% text match
@@ -70,7 +70,7 @@ portadoc extract --smart --no-easyocr --preprocess none --psm 6 <pdf>
 
 ### For text accuracy (OCR extraction):
 ```bash
-portadoc extract --smart --use-paddleocr --use-doctr --preprocess none --psm 6 <pdf>
+portadoc extract --use-paddleocr --use-doctr --preprocess none --psm 6 <pdf>
 # Or: make extract-all PDF=<pdf>
 ```
 - Clean PDFs: 90.29% F1, 98.25% text match
@@ -78,7 +78,6 @@ portadoc extract --smart --use-paddleocr --use-doctr --preprocess none --psm 6 <
 
 ## Key CLI Flags
 
-- `--smart` - Use smart harmonization with full tracking (recommended)
 - `--no-easyocr` - Disable EasyOCR (better bbox precision)
 - `--use-paddleocr` - Enable PaddleOCR (adds text accuracy)
 - `--use-doctr` - Enable docTR (best text accuracy)

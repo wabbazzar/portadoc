@@ -48,16 +48,16 @@ extract: ## Extract words from PDF (use PDF=path/to/file.pdf)
 	$(PORTADOC) extract $(PDF) $(if $(OUTPUT),-o $(OUTPUT),)
 
 extract-smart: ## Extract with smart harmonization (Tesseract-only, best F1)
-	$(PORTADOC) extract --smart --no-easyocr --preprocess none --psm 6 $(PDF) $(if $(OUTPUT),-o $(OUTPUT),)
+	$(PORTADOC) extract --no-easyocr --preprocess none --psm 6 $(PDF) $(if $(OUTPUT),-o $(OUTPUT),)
 
 extract-all: ## Extract with ALL 4 engines (best text accuracy)
-	$(PORTADOC) extract --smart --use-paddleocr --use-doctr --preprocess none --psm 6 $(PDF) $(if $(OUTPUT),-o $(OUTPUT),)
+	$(PORTADOC) extract --use-paddleocr --use-doctr --preprocess none --psm 6 $(PDF) $(if $(OUTPUT),-o $(OUTPUT),)
 
 extract-clean: ## Extract from clean PDFs (high quality source)
-	$(PORTADOC) extract --smart --no-easyocr --preprocess none --psm 6 $(PDF) $(if $(OUTPUT),-o $(OUTPUT),)
+	$(PORTADOC) extract --no-easyocr --preprocess none --psm 6 $(PDF) $(if $(OUTPUT),-o $(OUTPUT),)
 
 extract-verbose: ## Extract with progress bar
-	$(PORTADOC) extract --smart --no-easyocr --preprocess none --psm 6 --progress $(PDF) $(if $(OUTPUT),-o $(OUTPUT),)
+	$(PORTADOC) extract --no-easyocr --preprocess none --psm 6 --progress $(PDF) $(if $(OUTPUT),-o $(OUTPUT),)
 
 ##@ Evaluation
 
@@ -65,17 +65,17 @@ eval: ## Evaluate extraction against ground truth
 	$(PORTADOC) eval $(PDF) $(GROUND_TRUTH)
 
 eval-smart: ## Evaluate with Tesseract-only (best F1)
-	$(PORTADOC) eval --smart --no-easyocr --preprocess none --psm 6 $(PDF) $(GROUND_TRUTH)
+	$(PORTADOC) eval --no-easyocr --preprocess none --psm 6 $(PDF) $(GROUND_TRUTH)
 
 eval-all: ## Evaluate with ALL 4 engines (best text accuracy)
-	$(PORTADOC) eval --smart --use-paddleocr --use-doctr --preprocess none --psm 6 $(PDF) $(GROUND_TRUTH)
+	$(PORTADOC) eval --use-paddleocr --use-doctr --preprocess none --psm 6 $(PDF) $(GROUND_TRUTH)
 
 eval-verbose: ## Evaluate with detailed match info
-	$(PORTADOC) eval --smart --no-easyocr --preprocess none --psm 6 --verbose $(PDF) $(GROUND_TRUTH)
+	$(PORTADOC) eval --no-easyocr --preprocess none --psm 6 --verbose $(PDF) $(GROUND_TRUTH)
 
 benchmark: ## Run benchmark comparing Tess-only vs all engines
-	@echo "=== Tesseract Only ===" && $(PORTADOC) eval --smart --no-easyocr --preprocess none --psm 6 $(PDF) $(GROUND_TRUTH) 2>&1 | grep -E "F1 Score|Text Match"
-	@echo "=== All 4 Engines ===" && $(PORTADOC) eval --smart --use-paddleocr --use-doctr --preprocess none --psm 6 $(PDF) $(GROUND_TRUTH) 2>&1 | grep -E "F1 Score|Text Match"
+	@echo "=== Tesseract Only ===" && $(PORTADOC) eval --no-easyocr --preprocess none --psm 6 $(PDF) $(GROUND_TRUTH) 2>&1 | grep -E "F1 Score|Text Match"
+	@echo "=== All 4 Engines ===" && $(PORTADOC) eval --use-paddleocr --use-doctr --preprocess none --psm 6 $(PDF) $(GROUND_TRUTH) 2>&1 | grep -E "F1 Score|Text Match"
 
 ##@ Server
 
@@ -108,7 +108,7 @@ clean: ## Clean up temporary files and caches
 ##@ Quick Commands
 
 peter-lou: ## Extract from peter_lou_50dpi.pdf (degraded test file)
-	$(PORTADOC) extract --smart --no-easyocr --preprocess none --psm 6 data/input/peter_lou_50dpi.pdf
+	$(PORTADOC) extract --no-easyocr --preprocess none --psm 6 data/input/peter_lou_50dpi.pdf
 
 peter-lou-eval: ## Evaluate peter_lou_50dpi.pdf against ground truth
-	$(PORTADOC) eval --smart --no-easyocr --preprocess none --psm 6 data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv
+	$(PORTADOC) eval --no-easyocr --preprocess none --psm 6 data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv

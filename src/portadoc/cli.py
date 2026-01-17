@@ -5,7 +5,7 @@ from pathlib import Path
 
 import click
 
-from .extractor import extract_words, extract_words_smart
+from .extractor import extract_words, extract_document
 from .output import format_output, write_harmonized_csv
 
 
@@ -21,7 +21,7 @@ def main():
 @click.option(
     "-o", "--output",
     type=click.Path(path_type=Path),
-    help="Output file path (default: stdout for CSV, required for JSON)"
+    help="Output file path (default: stdout for CSV)"
 )
 @click.option(
     "--format", "-f",
@@ -39,7 +39,7 @@ def main():
     "--triage",
     type=click.Choice(["strict", "normal", "permissive"]),
     default=None,
-    help="Triage level to filter low-confidence detections (default: none)"
+    help="Triage level to filter low-confidence detections (default: none, requires --format json)"
 )
 @click.option(
     "--progress", "-p",
@@ -84,7 +84,7 @@ def main():
 @click.option(
     "--no-tesseract",
     is_flag=True,
-    help="Disable Tesseract OCR"
+    help="Disable Tesseract OCR (not recommended)"
 )
 @click.option(
     "--no-easyocr",
@@ -109,26 +109,42 @@ def main():
     help="Enable docTR engine"
 )
 @click.option(
-    "--smart",
-    is_flag=True,
-    help="Use smart harmonization with full tracking (outputs HarmonizedWord CSV)"
-)
-@click.option(
     "--config",
     type=click.Path(exists=True, path_type=Path),
     help="Path to config file (YAML) for harmonization thresholds"
 )
-def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool, preprocess: str, psm: int, oem: int, easyocr_decoder: str, easyocr_text_threshold: float, use_paddleocr: bool, no_tesseract: bool, no_easyocr: bool, upscale: str, upscale_method: str, use_doctr: bool, smart: bool, config: Path | None):
+def extract(
+    pdf_path: Path,
+    output: Path | None,
+    format: str,
+    dpi: int,
+    triage: str | None,
+    progress: bool,
+    preprocess: str,
+    psm: int,
+    oem: int,
+    easyocr_decoder: str,
+    easyocr_text_threshold: float,
+    use_paddleocr: bool,
+    no_tesseract: bool,
+    no_easyocr: bool,
+    upscale: str,
+    upscale_method: str,
+    use_doctr: bool,
+    config: Path | None,
+):
     """
     Extract words and bounding boxes from a PDF.
 
     PDF_PATH is the path to the input PDF file.
+
+    Uses smart harmonization with Tesseract as primary engine and optional
+    secondary engines (EasyOCR, PaddleOCR, docTR) for text voting.
     """
     try:
         # Set up progress callback if requested
         progress_bar = None
         if progress:
-            # We need to know total pages first
             from .pdf import load_pdf
             with load_pdf(pdf_path, dpi=dpi) as pdf:
                 total_pages = len(pdf)
@@ -146,15 +162,45 @@ def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: 
         # Parse upscale factor
         upscale_factor = None if upscale == "none" else int(upscale)
 
-        if smart:
-            # Use smart harmonization mode
+        # JSON format requires Document object for backward compat
+        if format == "json":
             if triage:
-                click.echo("Warning: --triage is ignored in --smart mode", err=True)
-            if format == "json":
-                click.echo("Error: --smart mode only supports CSV output", err=True)
-                sys.exit(1)
+                click.echo("Note: Using triage filtering with JSON output", err=True)
 
-            harmonized_words = extract_words_smart(
+            doc = extract_document(
+                pdf_path,
+                dpi=dpi,
+                triage=triage,
+                preprocess=preprocess,
+                upscale=upscale_factor,
+                upscale_method=upscale_method,
+                tesseract_psm=psm,
+                tesseract_oem=oem,
+                easyocr_decoder=easyocr_decoder,
+                easyocr_text_threshold=easyocr_text_threshold,
+                use_paddleocr=use_paddleocr,
+                use_tesseract=not no_tesseract,
+                use_easyocr=not no_easyocr,
+                use_doctr=use_doctr,
+                config_path=config,
+                progress_callback=progress_callback if progress else None,
+            )
+
+            if progress_bar:
+                progress_bar.__exit__(None, None, None)
+
+            if output:
+                format_output(doc, output, format=format)
+                click.echo(f"Extracted {doc.total_words} words to {output}", err=True)
+            else:
+                click.echo("Error: --output is required for JSON format", err=True)
+                sys.exit(1)
+        else:
+            # CSV format - use full HarmonizedWord output
+            if triage:
+                click.echo("Warning: --triage is only supported with --format json", err=True)
+
+            harmonized_words = extract_words(
                 pdf_path,
                 dpi=dpi,
                 preprocess=preprocess,
@@ -175,46 +221,11 @@ def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: 
             if progress_bar:
                 progress_bar.__exit__(None, None, None)
 
-            # Output results
             if output:
                 write_harmonized_csv(harmonized_words, output)
                 click.echo(f"Extracted {len(harmonized_words)} words to {output}", err=True)
             else:
                 write_harmonized_csv(harmonized_words, sys.stdout)
-        else:
-            # Standard extraction mode
-            doc = extract_words(
-                pdf_path,
-                dpi=dpi,
-                triage=triage,
-                preprocess=preprocess,
-                upscale=upscale_factor,
-                upscale_method=upscale_method,
-                tesseract_psm=psm,
-                tesseract_oem=oem,
-                easyocr_decoder=easyocr_decoder,
-                easyocr_text_threshold=easyocr_text_threshold,
-                use_paddleocr=use_paddleocr,
-                use_tesseract=not no_tesseract,
-                use_easyocr=not no_easyocr,
-                use_doctr=use_doctr,
-                progress_callback=progress_callback if progress else None,
-            )
-
-            if progress_bar:
-                progress_bar.__exit__(None, None, None)
-
-            # Output results
-            if output:
-                format_output(doc, output, format=format)
-                click.echo(f"Extracted {doc.total_words} words to {output}", err=True)
-            else:
-                if format == "json":
-                    click.echo("Error: --output is required for JSON format", err=True)
-                    sys.exit(1)
-                # Write CSV to stdout
-                from .output import write_csv
-                write_csv(doc, sys.stdout)
 
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
@@ -239,7 +250,7 @@ def check():
         version = get_tesseract_version()
         click.echo(f"Tesseract:  OK (version {version})")
     else:
-        click.echo("Tesseract:  NOT FOUND")
+        click.echo("Tesseract:  NOT FOUND (REQUIRED)")
         click.echo("  Install with: sudo apt-get install tesseract-ocr tesseract-ocr-eng")
 
     if is_easyocr_available():
@@ -272,12 +283,6 @@ def check():
     type=int,
     default=300,
     help="DPI for PDF rendering (default: 300)"
-)
-@click.option(
-    "--triage",
-    type=click.Choice(["strict", "normal", "permissive"]),
-    default=None,
-    help="Triage level to filter low-confidence detections"
 )
 @click.option(
     "--iou-threshold",
@@ -328,7 +333,7 @@ def check():
 @click.option(
     "--no-tesseract",
     is_flag=True,
-    help="Disable Tesseract OCR"
+    help="Disable Tesseract OCR (not recommended)"
 )
 @click.option(
     "--no-easyocr",
@@ -353,11 +358,6 @@ def check():
     help="Enable docTR engine"
 )
 @click.option(
-    "--smart",
-    is_flag=True,
-    help="Use smart harmonization mode"
-)
-@click.option(
     "--config",
     type=click.Path(exists=True, path_type=Path),
     help="Path to config file (YAML) for harmonization thresholds"
@@ -366,7 +366,6 @@ def evaluate_cmd(
     pdf_path: Path,
     ground_truth: Path,
     dpi: int,
-    triage: str | None,
     iou_threshold: float,
     verbose: bool,
     preprocess: str,
@@ -380,7 +379,6 @@ def evaluate_cmd(
     upscale: str,
     upscale_method: str,
     use_doctr: bool,
-    smart: bool,
     config: Path | None,
 ):
     """
@@ -395,40 +393,25 @@ def evaluate_cmd(
         # Parse upscale factor
         upscale_factor = None if upscale == "none" else int(upscale)
 
-        if smart:
-            # Use smart harmonization mode
-            if triage:
-                click.echo("Warning: --triage is ignored in --smart mode", err=True)
+        harmonized_words = extract_words(
+            pdf_path,
+            dpi=dpi,
+            preprocess=preprocess,
+            upscale=upscale_factor,
+            upscale_method=upscale_method,
+            tesseract_psm=psm,
+            tesseract_oem=oem,
+            easyocr_decoder=easyocr_decoder,
+            easyocr_text_threshold=easyocr_text_threshold,
+            use_paddleocr=use_paddleocr,
+            use_tesseract=not no_tesseract,
+            use_easyocr=not no_easyocr,
+            use_doctr=use_doctr,
+            config_path=config,
+        )
 
-            harmonized_words = extract_words_smart(
-                pdf_path, dpi=dpi, preprocess=preprocess,
-                upscale=upscale_factor, upscale_method=upscale_method,
-                tesseract_psm=psm, tesseract_oem=oem,
-                easyocr_decoder=easyocr_decoder, easyocr_text_threshold=easyocr_text_threshold,
-                use_paddleocr=use_paddleocr,
-                use_tesseract=not no_tesseract,
-                use_easyocr=not no_easyocr,
-                use_doctr=use_doctr,
-                config_path=config,
-            )
-
-            # Evaluate
-            result = evaluate(harmonized_words, ground_truth, iou_threshold=iou_threshold)
-        else:
-            # Standard mode
-            doc = extract_words(
-                pdf_path, dpi=dpi, triage=triage, preprocess=preprocess,
-                upscale=upscale_factor, upscale_method=upscale_method,
-                tesseract_psm=psm, tesseract_oem=oem,
-                easyocr_decoder=easyocr_decoder, easyocr_text_threshold=easyocr_text_threshold,
-                use_paddleocr=use_paddleocr,
-                use_tesseract=not no_tesseract,
-                use_easyocr=not no_easyocr,
-                use_doctr=use_doctr,
-            )
-
-            # Evaluate
-            result = evaluate(doc, ground_truth, iou_threshold=iou_threshold)
+        # Evaluate
+        result = evaluate(harmonized_words, ground_truth, iou_threshold=iou_threshold)
 
         # Print summary
         click.echo(result.summary())

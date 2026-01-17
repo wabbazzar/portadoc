@@ -2,8 +2,8 @@
 
 __version__ = "0.1.0"
 
-from .models import BBox, Document, Page, Word
-from .extractor import extract_words, extract_to_csv
+from .models import BBox, Document, Page, Word, HarmonizedWord
+from .extractor import extract_words, extract_document, extract_to_csv
 from .pdf import load_pdf
 
 __all__ = [
@@ -11,7 +11,9 @@ __all__ = [
     "Document",
     "Page",
     "Word",
+    "HarmonizedWord",
     "extract_words",
+    "extract_document",
     "extract_to_csv",
     "load_pdf",
 ]

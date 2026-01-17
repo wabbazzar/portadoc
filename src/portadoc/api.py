@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
-from .extractor import extract_words
+from .extractor import extract_document
 from .models import Document
 
 
@@ -190,7 +190,7 @@ async def extract_pdf(
         temp_path.write_bytes(content)
 
         # Extract words
-        doc = extract_words(
+        doc = extract_document(
             temp_path,
             dpi=dpi,
             triage=triage,
@@ -224,7 +224,7 @@ def _run_extraction(
     try:
         _jobs[job_id]["status"] = JobStatus.PROCESSING
 
-        doc = extract_words(
+        doc = extract_document(
             pdf_path,
             dpi=dpi,
             triage=triage,

@@ -43,7 +43,7 @@ Result: duplicate "Care" detections instead of merging.
 ```bash
 source .venv/bin/activate
 # Must use all 4 engines:
-portadoc eval --smart --use-paddleocr --use-doctr --preprocess none --psm 6 \
+portadoc eval --use-paddleocr --use-doctr --preprocess none --psm 6 \
     data/input/peter_lou.pdf data/input/peter_lou_words_slim.csv
 # Target: F1 >= 98% (currently 90.29%)
 ```
@@ -82,7 +82,7 @@ portadoc serve
 
 ## Key Principles
 - **Complete Task 1 first**, validate metrics, then start Task 2
-- **ALL tests must use all 4 engines**: `--smart --use-paddleocr --use-doctr`
+- **ALL tests must use all 4 engines**: `--use-paddleocr --use-doctr`
 - **CPU-only** - no GPU/CUDA dependencies (use `use_gpu=False`)
 - **Update Makefile** when adding new CLI commands
 - **Update @fix_plan.md** with results after each subtask

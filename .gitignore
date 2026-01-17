@@ -53,3 +53,16 @@ Thumbs.db
 
 # EasyOCR model cache (large files)
 ~/.EasyOCR/
+
+# Ralph session state files
+.call_count
+.circuit_breaker_*
+.exit_signals
+.last_reset
+.ralph_session*
+.response_analysis
+progress.json
+status.json
+
+# Extracted data files
+data/input/*_extracted.csv
