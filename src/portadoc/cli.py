@@ -69,6 +69,7 @@ def extract(pdf_path: Path, output: Path | None, format: str, dpi: int):
 def check():
     """Check OCR engine availability."""
     from .ocr.tesseract import is_tesseract_available, get_tesseract_version
+    from .ocr.easyocr import is_easyocr_available, get_easyocr_version
 
     click.echo("OCR Engine Status:")
     click.echo("-" * 40)
@@ -79,6 +80,13 @@ def check():
     else:
         click.echo("Tesseract: NOT FOUND")
         click.echo("  Install with: sudo apt-get install tesseract-ocr tesseract-ocr-eng")
+
+    if is_easyocr_available():
+        version = get_easyocr_version()
+        click.echo(f"EasyOCR:   OK (version {version})")
+    else:
+        click.echo("EasyOCR:   NOT FOUND")
+        click.echo("  Install with: pip install easyocr")
 
 
 if __name__ == "__main__":

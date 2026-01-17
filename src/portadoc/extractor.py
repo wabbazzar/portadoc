@@ -5,12 +5,15 @@ from pathlib import Path
 from .models import BBox, Document, Page, Word
 from .pdf import load_pdf
 from .ocr.tesseract import extract_words_tesseract, is_tesseract_available
+from .ocr.easyocr import extract_words_easyocr, is_easyocr_available
 
 
 def extract_words(
     pdf_path: str | Path,
     dpi: int = 300,
     use_tesseract: bool = True,
+    use_easyocr: bool = True,
+    gpu: bool = False,
 ) -> Document:
     """
     Extract words from a PDF document.
@@ -19,6 +22,8 @@ def extract_words(
         pdf_path: Path to PDF file
         dpi: Resolution for rendering pages
         use_tesseract: Whether to use Tesseract OCR
+        use_easyocr: Whether to use EasyOCR
+        gpu: Whether to use GPU for EasyOCR (default: False)
 
     Returns:
         Document with extracted words
@@ -28,11 +33,11 @@ def extract_words(
 
     # Check OCR availability
     tesseract_ok = is_tesseract_available() if use_tesseract else False
+    easyocr_ok = is_easyocr_available() if use_easyocr else False
 
-    if use_tesseract and not tesseract_ok:
+    if not tesseract_ok and not easyocr_ok:
         raise RuntimeError(
-            "Tesseract OCR is not installed. "
-            "Install with: sudo apt-get install tesseract-ocr tesseract-ocr-eng"
+            "No OCR engine available. Install tesseract-ocr or easyocr."
         )
 
     word_id_counter = 0
@@ -45,19 +50,29 @@ def extract_words(
                 height=page_height,
             )
 
+            all_words = []
+
             # Extract words using Tesseract
             if tesseract_ok:
                 tess_words = extract_words_tesseract(
                     image, page_num, page_width, page_height
                 )
+                all_words.extend(tess_words)
 
-                # Assign word IDs and add to page
-                for word in tess_words:
-                    word.word_id = word_id_counter
-                    word_id_counter += 1
-                    # Clear engine field for harmonized (single-engine) output
-                    word.engine = ""
-                    page.words.append(word)
+            # Extract words using EasyOCR (if Tesseract not available or for comparison)
+            if easyocr_ok and not tesseract_ok:
+                easy_words = extract_words_easyocr(
+                    image, page_num, page_width, page_height, gpu=gpu
+                )
+                all_words.extend(easy_words)
+
+            # Assign word IDs and add to page
+            for word in all_words:
+                word.word_id = word_id_counter
+                word_id_counter += 1
+                # Clear engine field for single-engine output
+                word.engine = ""
+                page.words.append(word)
 
             doc.pages.append(page)
 

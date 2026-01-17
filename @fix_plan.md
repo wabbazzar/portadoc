@@ -3,13 +3,13 @@
 ## High Priority (Core Pipeline)
 
 - [x] Set up Python project structure with requirements.txt
-- [x] Install Python dependencies (pymupdf, pytesseract, opencv-python-headless, numpy, click)
+- [x] Install Python dependencies (pymupdf, pytesseract, opencv-python-headless, numpy, click, easyocr)
 - [x] Implement PDF to image conversion using PyMuPDF
 - [x] Implement Tesseract OCR wrapper with word-level bounding boxes
+- [x] Implement EasyOCR wrapper with word-level output
 - [x] Build coordinate transformation (image coords → PDF coords)
 - [x] Create basic CLI with `extract` command
 - [ ] **BLOCKED**: Install tesseract-ocr binary - needs sudo: `sudo apt-get install tesseract-ocr tesseract-ocr-eng`
-- [ ] Implement EasyOCR wrapper with word-level output
 
 ## Medium Priority (Quality Improvements)
 
@@ -37,11 +37,19 @@
 - [x] Create test data (peter_lou.pdf, peter_lou_50dpi.pdf, words CSV)
 - [x] Define project specifications
 
-## Validation Checkpoints
+## Validation Results
 
-After each major feature, validate against:
-- `data/input/peter_lou.pdf` → compare output to `peter_lou_words_slim.csv`
-- `data/input/peter_lou_50dpi.pdf` → should produce same words despite degradation
+**EasyOCR extraction test (peter_lou.pdf):**
+- Ground truth: 401 words
+- EasyOCR output: 378 words
+- Gap: 23 words (~94% recall)
+
+Missing items likely include:
+- Pixel detector regions (logos, signatures)
+- Some low-confidence text
+- Small punctuation marks
+
+Next step: Implement pixel detection fallback and OCR harmonization to improve recall.
 
 ## Notes
 
