@@ -91,7 +91,19 @@ def main():
     is_flag=True,
     help="Disable EasyOCR"
 )
-def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool, preprocess: str, psm: int, oem: int, easyocr_decoder: str, easyocr_text_threshold: float, use_paddleocr: bool, no_tesseract: bool, no_easyocr: bool):
+@click.option(
+    "--upscale",
+    type=click.Choice(["none", "2", "4"]),
+    default="none",
+    help="Super-resolution upscale factor (default: none)"
+)
+@click.option(
+    "--upscale-method",
+    type=click.Choice(["espcn", "fsrcnn", "bicubic", "lanczos"]),
+    default="espcn",
+    help="Super-resolution method (default: espcn)"
+)
+def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool, preprocess: str, psm: int, oem: int, easyocr_decoder: str, easyocr_text_threshold: float, use_paddleocr: bool, no_tesseract: bool, no_easyocr: bool, upscale: str, upscale_method: str):
     """
     Extract words and bounding boxes from a PDF.
 
@@ -116,12 +128,17 @@ def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: 
             if progress_bar:
                 progress_bar.update(1)
 
+        # Parse upscale factor
+        upscale_factor = None if upscale == "none" else int(upscale)
+
         # Extract words
         doc = extract_words(
             pdf_path,
             dpi=dpi,
             triage=triage,
             preprocess=preprocess,
+            upscale=upscale_factor,
+            upscale_method=upscale_method,
             tesseract_psm=psm,
             tesseract_oem=oem,
             easyocr_decoder=easyocr_decoder,
@@ -258,6 +275,18 @@ def check():
     is_flag=True,
     help="Disable EasyOCR"
 )
+@click.option(
+    "--upscale",
+    type=click.Choice(["none", "2", "4"]),
+    default="none",
+    help="Super-resolution upscale factor (default: none)"
+)
+@click.option(
+    "--upscale-method",
+    type=click.Choice(["espcn", "fsrcnn", "bicubic", "lanczos"]),
+    default="espcn",
+    help="Super-resolution method (default: espcn)"
+)
 def evaluate_cmd(
     pdf_path: Path,
     ground_truth: Path,
@@ -273,6 +302,8 @@ def evaluate_cmd(
     use_paddleocr: bool,
     no_tesseract: bool,
     no_easyocr: bool,
+    upscale: str,
+    upscale_method: str,
 ):
     """
     Evaluate extraction against ground truth CSV.
@@ -283,9 +314,13 @@ def evaluate_cmd(
     from .metrics import evaluate
 
     try:
+        # Parse upscale factor
+        upscale_factor = None if upscale == "none" else int(upscale)
+
         # Extract words
         doc = extract_words(
             pdf_path, dpi=dpi, triage=triage, preprocess=preprocess,
+            upscale=upscale_factor, upscale_method=upscale_method,
             tesseract_psm=psm, tesseract_oem=oem,
             easyocr_decoder=easyocr_decoder, easyocr_text_threshold=easyocr_text_threshold,
             use_paddleocr=use_paddleocr,

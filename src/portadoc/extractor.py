@@ -11,6 +11,7 @@ from .ocr.paddleocr import extract_words_paddleocr, is_paddleocr_available
 from .detection import detect_missed_content
 from .harmonize import harmonize_words
 from .preprocess import PreprocessLevel, preprocess_for_ocr, auto_detect_quality
+from .superres import upscale_image
 from .triage import TriageLevel, triage_words
 
 
@@ -23,6 +24,8 @@ def extract_words(
     use_pixel_detection: bool = True,
     gpu: bool = False,
     preprocess: Optional[str] = "auto",
+    upscale: Optional[int] = None,
+    upscale_method: str = "espcn",
     triage: Optional[str] = None,
     tesseract_psm: int = 3,
     tesseract_oem: int = 3,
@@ -42,6 +45,8 @@ def extract_words(
         use_pixel_detection: Whether to use pixel detection fallback
         gpu: Whether to use GPU for EasyOCR/PaddleOCR (default: False)
         preprocess: Preprocessing level - "none", "light", "standard", "aggressive", or "auto"
+        upscale: Super-resolution scale factor (2, 4, or None for no upscaling)
+        upscale_method: Super-resolution method - "espcn", "fsrcnn", "bicubic", "lanczos"
         triage: Triage level - "strict", "normal", "permissive", or None (no triage)
         tesseract_psm: Tesseract page segmentation mode (0-13, default 3)
         tesseract_oem: Tesseract OCR engine mode (0-3, default 3)
@@ -81,14 +86,18 @@ def extract_words(
                 height=page_height,
             )
 
-            # Apply preprocessing if requested
+            # Apply super-resolution if requested (before preprocessing)
             ocr_image = image
+            if upscale and upscale > 1:
+                ocr_image = upscale_image(ocr_image, scale=upscale, method=upscale_method)
+
+            # Apply preprocessing if requested
             if preprocess and preprocess != "none":
                 if preprocess == "auto":
-                    level = auto_detect_quality(image)
+                    level = auto_detect_quality(ocr_image)
                 else:
                     level = PreprocessLevel(preprocess)
-                ocr_image = preprocess_for_ocr(image, level=level, return_rgb=True)
+                ocr_image = preprocess_for_ocr(ocr_image, level=level, return_rgb=True)
 
             # Extract words from each OCR engine
             tess_words = []

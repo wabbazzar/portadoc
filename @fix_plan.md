@@ -53,16 +53,25 @@
 
 **KEY INSIGHT:** PaddleOCR underperforms on this degraded doc. Adding it to harmonization reduces F1 due to more false positives. The problem is image quality, not OCR engines - need super-resolution.
 
-### Phase 2: Implement Image Super-Resolution (HIGH PRIORITY)
-- [ ] Create `src/portadoc/superres.py` module
-  - Implement `upscale_image(image, scale=4, method='opencv_dnn')` function
-  - Support methods: 'bicubic', 'lanczos', 'opencv_dnn'
-  - For OpenCV DNN: use `cv2.dnn_superres.DnnSuperResImpl_create()` with ESPCN/FSRCNN models
-  - Download models from: https://github.com/fannymonori/TF-ESPCN or use cv2's built-in
-  - NOTE: RealESRGAN has torchvision compatibility issues - use OpenCV DNN instead
-- [ ] Add `--upscale` flag to CLI (none, 2x, 4x)
-- [ ] Apply super-resolution BEFORE preprocessing and OCR
-- [ ] Test on degraded PDF, record metrics
+### Phase 2: Implement Image Super-Resolution (DONE)
+- [x] Create `src/portadoc/superres.py` module
+  - Implemented `upscale_image(image, scale, method)` function
+  - Support methods: 'bicubic', 'lanczos', 'espcn', 'fsrcnn'
+  - Uses OpenCV DNN: `cv2.dnn_superres.DnnSuperResImpl_create()` with ESPCN/FSRCNN models
+  - Models downloaded to `models/` directory
+- [x] Add `--upscale` and `--upscale-method` flags to CLI
+- [x] Apply super-resolution BEFORE preprocessing and OCR
+- [x] Tested on degraded PDF
+
+**Super-Resolution Results (degraded PDF, preprocess=none, PSM=6, text_ths=0.95):**
+| Config | Precision | Recall | F1 | Text Match |
+|--------|-----------|--------|-----|------------|
+| No upscale (baseline) | 76.54% | 87.03% | **81.45%** | **40.11%** |
+| 2x ESPCN | 70.98% | 84.79% | 77.27% | 36.76% |
+| 4x ESPCN | 68.63% | 81.30% | 74.43% | 38.96% |
+| 4x Lanczos | 69.09% | 83.04% | 75.42% | 34.23% |
+
+**KEY INSIGHT:** Super-resolution DOES NOT HELP on this degraded document. The baseline without upscaling performs best. The OCR engines (Tesseract+EasyOCR) may already have internal upscaling or the DNN models aren't suited for text. The fundamental problem is that this is a 50 DPI rasterized PDF - no amount of upscaling can recover information that isn't there.
 
 ### Phase 3: Implement docTR Engine (MEDIUM PRIORITY)
 - [ ] Create `src/portadoc/ocr/doctr_ocr.py` wrapper
