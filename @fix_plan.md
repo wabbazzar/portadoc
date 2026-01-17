@@ -30,96 +30,112 @@
   - CLI: `eval` command compares extraction to ground truth CSV
   - Results (no triage): 98.50% recall, 94.50% precision, 96.46% F1
 
-## Low Priority (Web Service & Polish)
+## Low Priority (Web Service & Polish) - DONE
 
 - [x] Build FastAPI REST endpoints
-  - Implemented in api.py: /health, /extract, / endpoints
-  - POST /extract accepts PDF upload, returns JSON with words and bounding boxes
-  - Supports dpi, triage, preprocess query parameters
-  - CLI: `portadoc serve --host 0.0.0.0 --port 8000`
 - [x] Add async job processing for large PDFs
-  - POST /jobs submits PDF for background processing
-  - GET /jobs/{job_id} polls for status and result
-  - GET /jobs lists all jobs, DELETE /jobs/{job_id} cleans up
-  - Uses ThreadPoolExecutor with 2 workers for CPU-bound OCR
-- [x] Implement JSON output format (in output.py)
+- [x] Implement JSON output format
 - [x] Add progress reporting for CLI
-  - CLI: `--progress` / `-p` flag shows progress bar during extraction
-  - Uses click.progressbar with per-page updates
-  - extractor.py accepts progress_callback parameter
-- [ ] Research additional CPU-compatible OCRs (PaddleOCR, docTR)
-- [ ] Performance optimization
 
-## Completed
+---
 
-- [x] Project initialization
-- [x] Create test data (peter_lou.pdf, peter_lou_50dpi.pdf, words CSV)
-- [x] Define project specifications
+## CURRENT FOCUS: Degraded Document Performance
 
-## Validation Results
+**Baseline (peter_lou_50dpi.pdf):** 51.61% precision, 55.86% recall, 53.65% F1, 22.77% text match
+**Target:** Match clean PDF performance (~95% F1, ~90% text match)
 
-**Latest extraction test (peter_lou.pdf with harmonization + pixel detection):**
-- Ground truth: 401 entries
-- Our output: 420 entries (over-extraction is OK for redaction recall)
-- Tesseract alone: 399 words
-- EasyOCR alone: 378 words
-- Harmonized: 414 words
-- Pixel detector regions: 6 (3 match ground truth, 3 extra)
+### Key Files
+- `src/portadoc/cli.py` - CLI commands (extract, eval, serve)
+- `src/portadoc/preprocess.py` - OpenCV preprocessing (exists but not wired to CLI)
+- `src/portadoc/extractor.py` - Main extraction pipeline
+- `src/portadoc/ocr/tesseract.py` - Tesseract wrapper
+- `src/portadoc/ocr/easyocr.py` - EasyOCR wrapper
+- `src/portadoc/harmonize.py` - Multi-engine result fusion
+- `src/portadoc/metrics.py` - Evaluation metrics
 
-**Text coverage analysis:**
-- Missing texts (4): `0923847`, `4_`, `peter lou`, `rmartinez pdx@gmail.com`
-- Extra texts (5+): minor variations like `,`, email formatting differences
-- Most differences are OCR transcription variations (e.g., `10.28` vs `10:28`)
+### Phase 1: Wire Up Preprocessing to CLI - DONE
+- [x] Add `--preprocess` flag to `extract` command in cli.py (none|light|standard|aggressive|auto)
+- [x] Add `--preprocess` flag to `eval` command in cli.py
+- [x] Test all preprocess levels on degraded PDF, record metrics in this file
+- [x] Verify `--dpi` flag works for upscaling (already exists, test if it helps degraded docs)
 
-**Harmonization strategy:**
-- Match words by bounding box IoU (threshold 0.3)
-- Vote on text: prefer Tesseract for character accuracy
-- Include unmatched Tesseract words (high recall)
-- Include unmatched EasyOCR words if not covered by Tesseract
+**Preprocessing Results (degraded 50dpi PDF, DPI=300):**
+| Preprocess | Precision | Recall | F1 | Text Match |
+|------------|-----------|--------|-----|------------|
+| none | **70.39%** | 84.79% | **76.92%** | **38.53%** |
+| light | 68.36% | **87.28%** | 76.67% | 33.43% |
+| standard | 66.03% | 86.28% | 74.81% | 30.92% |
+| aggressive | 30.21% | 21.70% | 25.25% | 3.45% |
+| auto | 51.61% | 55.86% | 53.65% | 22.77% |
 
-**Next steps to improve accuracy:**
-1. Tune pixel detection to reduce false positives
-2. Add confidence-based filtering for extra detections
-3. Implement preprocessing pipeline for degraded PDFs
+**KEY INSIGHT:** `preprocess=none` performs BEST on degraded docs. Auto-detection incorrectly applies aggressive preprocessing.
+
+**DPI Scaling Results (preprocess=none):**
+| DPI | Precision | Recall | F1 | Text Match |
+|-----|-----------|--------|-----|------------|
+| 72 | 59.10% | 59.10% | 59.10% | 58.65% |
+| 100 | 63.21% | 69.83% | 66.35% | **69.29%** |
+| 150 | 68.48% | 81.80% | 74.55% | 50.30% |
+| 300 | 70.39% | 84.79% | 76.92% | 38.53% |
+| 600 | 63.79% | 83.04% | 72.16% | 34.53% |
+
+**KEY INSIGHT:** Lower DPI (100-150) improves text match rate. DPI 100 + preprocess=none achieves **69.29% text match** (best so far)
+
+### Phase 2: Tune Preprocessing for Degraded Docs
+- [ ] In preprocess.py: experiment with CLAHE clip limit (currently 2.0, try 1.0-4.0)
+- [ ] In preprocess.py: test denoise h parameter (currently 10, try 5-30)
+- [ ] In preprocess.py: try adaptive thresholding vs Otsu for binarization
+- [ ] Add cv2.resize upscaling (INTER_CUBIC or INTER_LANCZOS4) before OCR
+- [ ] Test different sharpening kernel strengths
+
+### Phase 3: OCR Engine Tuning
+- [ ] In tesseract.py: test PSM modes 6 (block), 11 (sparse), 12 (sparse + OSD)
+- [ ] In tesseract.py: test OEM 0 (legacy), 1 (LSTM), 2 (combined)
+- [ ] Add `--psm` and `--oem` CLI flags, pass to tesseract wrapper
+- [ ] In easyocr.py: test decoder='beamsearch' (currently 'greedy')
+- [ ] In easyocr.py: tune contrast_ths (default 0.1), adjust_contrast (default True)
+- [ ] In easyocr.py: tune text_threshold (default 0.7), width_ths (default 0.5)
+
+### Phase 4: Alternative OCR Engines
+- [ ] Install PaddleOCR: `pip install paddlepaddle paddleocr`
+  - Create src/portadoc/ocr/paddleocr.py wrapper
+  - PaddleOCR is known for excellent degraded doc handling
+- [ ] Install docTR: `pip install python-doctr`
+  - Create src/portadoc/ocr/doctr.py wrapper
+- [ ] Benchmark each engine standalone on degraded PDF
+- [ ] Add best performer to harmonize.py pipeline
+
+### Phase 5: Bounding Box Accuracy
+- [ ] In extractor.py: improve coord scaling when source DPI differs from render DPI
+- [ ] Add sub-pixel bbox interpolation for low-res → high-res scaling
+- [ ] In metrics.py: test IoU thresholds (currently 0.5, try 0.3-0.7) for degraded matching
+
+### Validation Command
+After each change, run:
+```bash
+PYTHONPATH=src python3 -m portadoc.cli eval data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv
+```
+
+### Success Criteria
+- [ ] F1 Score > 80% on degraded PDF
+- [ ] Text Match Rate > 60% on degraded PDF
+- [ ] No regression on clean PDF (maintain ~96% F1)
 
 ## Notes
 
 - CPU-only constraint - no CUDA/GPU dependencies
 - Bounding boxes must be in PDF coordinate space (points, origin top-left)
-- Empty `engine` field means harmonized result from multiple engines
-- `pixel_detector` engine = fallback for OCR-missed content with confidence 0.0
 - Target: 401 words across 3 pages matching ground truth
 
-## Current Status
+## Baseline Results
 
-**✓ Tesseract installed and verified** (v5.3.4)
-**✓ Harmonization implemented** (harmonize.py - Tesseract + EasyOCR fusion)
-**✓ OpenCV preprocessing implemented** (preprocess.py - auto-detects quality level)
-
-**Preprocessing test results (degraded 50dpi PDF):**
-- No preprocess: 476 words (noisy)
-- Light: 506 words
-- Standard: 517 words
-- Aggressive: 267 words (over-filtered)
-- Auto: 422 words (balanced)
-
-**✓ Triage system implemented** (triage.py - filters low-confidence detections)
-
-**Triage test results:**
-- No triage: 418 words
-- Permissive: 415 words
-- Normal: 407 words
-- Strict: 402 words (very close to GT=401)
-
-**✓ Evaluation metrics implemented** (metrics.py)
-
-**Evaluation results (peter_lou.pdf vs ground truth):**
+**Clean PDF (peter_lou.pdf):**
 | Config | Precision | Recall | F1 | Words |
 |--------|-----------|--------|-----|-------|
-| No triage | 94.50% | **98.50%** | 96.46% | 418 |
-| Normal | 94.59% | 96.01% | 95.30% | 407 |
-| Strict | 94.78% | 95.01% | 94.89% | 402 |
+| No triage | 94.50% | 98.50% | 96.46% | 418 |
 
-For redaction, no triage recommended (highest recall).
-
-All Medium Priority tasks complete. Next: Low Priority items (FastAPI, async, etc.)
+**Degraded PDF (peter_lou_50dpi.pdf):**
+| Config | Precision | Recall | F1 | Text Match |
+|--------|-----------|--------|-----|------------|
+| auto (old default) | 51.61% | 55.86% | 53.65% | 22.77% |
+| **none, DPI=100** | 63.21% | 69.83% | 66.35% | **69.29%** |

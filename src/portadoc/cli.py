@@ -46,7 +46,13 @@ def main():
     is_flag=True,
     help="Show progress bar during extraction"
 )
-def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool):
+@click.option(
+    "--preprocess",
+    type=click.Choice(["none", "light", "standard", "aggressive", "auto"]),
+    default="auto",
+    help="Preprocessing level for OCR (default: auto)"
+)
+def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool, preprocess: str):
     """
     Extract words and bounding boxes from a PDF.
 
@@ -76,6 +82,7 @@ def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: 
             pdf_path,
             dpi=dpi,
             triage=triage,
+            preprocess=preprocess,
             progress_callback=progress_callback if progress else None,
         )
 
@@ -152,6 +159,12 @@ def check():
     is_flag=True,
     help="Show detailed match information"
 )
+@click.option(
+    "--preprocess",
+    type=click.Choice(["none", "light", "standard", "aggressive", "auto"]),
+    default="auto",
+    help="Preprocessing level for OCR (default: auto)"
+)
 def evaluate_cmd(
     pdf_path: Path,
     ground_truth: Path,
@@ -159,6 +172,7 @@ def evaluate_cmd(
     triage: str | None,
     iou_threshold: float,
     verbose: bool,
+    preprocess: str,
 ):
     """
     Evaluate extraction against ground truth CSV.
@@ -170,7 +184,7 @@ def evaluate_cmd(
 
     try:
         # Extract words
-        doc = extract_words(pdf_path, dpi=dpi, triage=triage)
+        doc = extract_words(pdf_path, dpi=dpi, triage=triage, preprocess=preprocess)
 
         # Evaluate
         result = evaluate(doc, ground_truth, iou_threshold=iou_threshold)
