@@ -25,6 +25,18 @@ class BBox:
     def area(self) -> float:
         return self.width * self.height
 
+    @property
+    def center_x(self) -> float:
+        return (self.x0 + self.x1) / 2
+
+    @property
+    def center_y(self) -> float:
+        return (self.y0 + self.y1) / 2
+
+    def contains_point(self, x: float, y: float) -> bool:
+        """Check if a point is inside this bbox."""
+        return self.x0 <= x <= self.x1 and self.y0 <= y <= self.y1
+
     def iou(self, other: "BBox") -> float:
         """Calculate Intersection over Union with another bbox."""
         inter_x0 = max(self.x0, other.x0)
@@ -55,6 +67,45 @@ class Word:
     # Optional metadata
     tesseract_confidence: Optional[float] = None
     easyocr_confidence: Optional[float] = None
+
+
+@dataclass
+class HarmonizedWord:
+    """
+    Word with full tracking for smart harmonization output.
+
+    Includes raw text from each engine and Levenshtein distances.
+    """
+    word_id: int
+    page: int
+    bbox: BBox
+    text: str                    # Final voted text
+    status: str                  # word|low_conf|pixel|secondary_only
+    source: str                  # T|TE|TED|E|D|P|...
+    confidence: float
+
+    # Raw text from each engine (empty string if not detected)
+    tess_text: str = ""
+    easy_text: str = ""
+    doctr_text: str = ""
+    paddle_text: str = ""
+
+    # Levenshtein distances to final text (-1 if engine didn't detect)
+    dist_tess: int = -1
+    dist_easy: int = -1
+    dist_doctr: int = -1
+    dist_paddle: int = -1
+
+    def to_word(self) -> Word:
+        """Convert to basic Word for backwards compatibility."""
+        return Word(
+            word_id=self.word_id,
+            text=self.text,
+            bbox=self.bbox,
+            page=self.page,
+            engine="",
+            confidence=self.confidence,
+        )
 
 
 @dataclass

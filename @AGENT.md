@@ -4,77 +4,69 @@
 
 ### System Dependencies
 ```bash
-# Install Tesseract OCR
-sudo apt-get update
-sudo apt-get install -y tesseract-ocr tesseract-ocr-eng
-
-# Verify installation
-tesseract --version
+# Tesseract OCR (already installed)
+tesseract --version  # Should show 5.3.4
 ```
 
 ### Python Environment
 ```bash
-# Create virtual environment (optional but recommended)
-python3 -m venv venv
-source venv/bin/activate
+# ALWAYS activate the virtual environment first
+source .venv/bin/activate
 
-# Install Python dependencies
-pip install -r requirements.txt
+# Verify installation
+python -c "import paddleocr; print('PaddleOCR OK')"
+python -c "from doctr.models import ocr_predictor; print('docTR OK')"
+python -c "import realesrgan; print('RealESRGAN OK')"
 ```
 
 ## Running the Application
 
 ### CLI Usage
 ```bash
+source .venv/bin/activate
+
 # Extract words from PDF to CSV
-python -m portadoc.cli extract data/input/peter_lou.pdf -o output.csv
+portadoc extract data/input/peter_lou.pdf -o output.csv
 
-# Extract with JSON output
-python -m portadoc.cli extract data/input/peter_lou.pdf --format json -o output.json
+# Extract with specific options
+portadoc extract data/input/peter_lou_50dpi.pdf --preprocess none --psm 6
 
-# Process degraded PDF
-python -m portadoc.cli extract data/input/peter_lou_50dpi.pdf -o degraded_output.csv
+# Evaluate against ground truth
+portadoc eval data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv
 ```
 
-### FastAPI Server (when implemented)
+### FastAPI Server
 ```bash
-# Start development server
+source .venv/bin/activate
 uvicorn portadoc.api:app --reload --port 8000
-
-# API endpoints:
-# POST /api/v1/extract - Upload PDF for processing
-# GET /api/v1/jobs/{job_id} - Check job status
 ```
 
 ## Running Tests
 ```bash
-# Run all tests
+source .venv/bin/activate
 pytest
-
-# Run with coverage
 pytest --cov=src/portadoc tests/ --cov-report=term-missing
-
-# Run specific test file
-pytest tests/test_ocr.py -v
 ```
 
 ## Validation
 ```bash
-# Compare output to ground truth
-python -m portadoc.cli extract data/input/peter_lou.pdf -o data/output/test.csv
-diff data/output/test.csv data/input/peter_lou_words_slim.csv
+source .venv/bin/activate
 
-# Check word count
-wc -l data/output/test.csv  # Should be 402 (401 words + header)
+# Degraded PDF evaluation (this is the hard one)
+portadoc eval data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv
+
+# Clean PDF evaluation (should maintain ~96% F1)
+portadoc eval data/input/peter_lou.pdf data/input/peter_lou_words_slim.csv
 ```
 
 ## Key Learnings
 - Tesseract provides word-level boxes via `image_to_data()` with Output.DICT
 - EasyOCR returns line-level boxes that need word decomposition
-- PDF coordinates use points (1/72 inch), origin at bottom-left
-- Image coordinates use pixels, origin at top-left - transformation required
-- For degraded images: upscale before OCR, use adaptive thresholding
-- Pixel detection fallback catches logos, signatures, and obscured text
+- PaddleOCR handles degraded documents better than Tesseract/EasyOCR
+- PDF coordinates use points (1/72 inch), origin at top-left
+- Image coordinates use pixels, origin at top-left - scaling required
+- For degraded images: super-resolution > preprocessing
+- 50 DPI source needs 4-6x upscale before OCR works well
 
 ## Project Structure
 ```
@@ -82,45 +74,72 @@ src/portadoc/
 ├── __init__.py
 ├── cli.py           # Command line interface
 ├── api.py           # FastAPI endpoints
+├── config.py        # Configuration loader (TO CREATE)
 ├── pdf.py           # PDF loading and conversion
-├── preprocessing.py # OpenCV image enhancement
-├── ocr/
-│   ├── __init__.py
-│   ├── tesseract.py # Tesseract wrapper
-│   ├── easyocr.py   # EasyOCR wrapper
-│   └── harmonizer.py # Multi-engine result merging
+├── preprocess.py    # OpenCV image enhancement
+├── superres.py      # Image super-resolution
+├── extractor.py     # Main extraction pipeline
+├── harmonize.py     # Multi-engine result merging (REWRITE - smart_harmonize)
 ├── detection.py     # Pixel-based text detection fallback
-├── models.py        # Data structures (Word, BBox, Page)
-└── output.py        # CSV/JSON formatters
+├── triage.py        # Confidence-based filtering
+├── metrics.py       # Evaluation metrics
+├── models.py        # Data structures (Word, BBox, Page, HarmonizedWord)
+├── output.py        # CSV/JSON formatters
+└── ocr/
+    ├── __init__.py
+    ├── tesseract.py   # Tesseract wrapper
+    ├── easyocr.py     # EasyOCR wrapper (LINE-level bbox)
+    ├── paddleocr.py   # PaddleOCR wrapper (LINE-level bbox)
+    └── doctr_ocr.py   # docTR wrapper (WORD-level bbox)
+
+config/
+└── harmonize.yaml   # All OCR and harmonization thresholds
 ```
 
-## Feature Development Quality Standards
-
-**CRITICAL**: All new features MUST meet these requirements before being considered complete.
-
-### Testing Requirements
-- Minimum 85% code coverage for new code
-- All tests must pass
-- Unit tests for business logic
-- Integration tests comparing output to ground truth
-
-### Git Workflow
-1. Commit with conventional messages: `feat:`, `fix:`, `test:`, etc.
-2. Push to remote after each completed feature
-3. Update @fix_plan.md with progress
-
-### Validation Checkpoints
-After each feature:
-- [ ] Tests pass with `pytest`
-- [ ] Output matches ground truth (401 words, correct bounding boxes)
-- [ ] Works on both clean and degraded PDFs
-- [ ] @fix_plan.md updated
-- [ ] Changes committed and pushed
-
 ## Dependencies
-See `requirements.txt` for full list. Core dependencies:
+Core (in .venv):
 - pymupdf (PDF rendering)
 - opencv-python (image preprocessing)
 - pytesseract (Tesseract OCR)
 - easyocr (secondary OCR)
+- paddleocr (PaddleOCR - best for degraded docs)
+- python-doctr (docTR OCR)
+- realesrgan, basicsr (super-resolution)
 - fastapi + uvicorn (web API)
+- python-Levenshtein (text distance for harmonization)
+- pyyaml (config file parsing)
+
+## Key Architecture Notes
+
+### OCR Engine Bbox Granularity
+- **Tesseract**: WORD-level bboxes (precise, use as primary)
+- **EasyOCR**: LINE-level bboxes (decomposed to words by char proportion - imprecise)
+- **PaddleOCR**: LINE-level bboxes (same issue as EasyOCR)
+- **docTR**: WORD-level bboxes (can use directly)
+
+### Harmonization Strategy
+See `@fix_plan.md` "Priority 2: Smart Harmonization Logic" for full design.
+- Tesseract is PRIMARY engine (trusted for bbox)
+- Secondary engines vote on TEXT only
+- LINE-level engines matched via containment, not IoU
+- All detections go to CSV with status: word/low_conf/pixel/secondary_only
+
+## Quality Standards
+
+### Testing Requirements
+- All tests must pass before committing
+- Test on both clean and degraded PDFs
+- Record metrics in @fix_plan.md
+
+### Git Workflow
+1. Commit with conventional messages: `feat:`, `fix:`, `test:`, etc.
+2. Update @fix_plan.md with progress and metrics
+3. Push after each completed feature
+
+### Validation Checkpoints
+After each feature:
+- [ ] Tests pass with `pytest`
+- [ ] Degraded PDF: F1 improved or maintained
+- [ ] Clean PDF: no regression (~96% F1)
+- [ ] @fix_plan.md updated with results
+- [ ] Changes committed

@@ -1,0 +1,80 @@
+# Portadoc Harmonization Configuration
+# All thresholds are configurable - tune based on your document quality
+
+harmonize:
+  # IoU threshold for matching words across engines
+  iou_threshold: 0.3
+
+  # Status thresholds (determines word/low_conf/pixel status)
+  status:
+    word_min_conf: 60.0           # >= this = "word" (trust text + bbox)
+    low_conf_min_conf: 20.0       # >= this = "low_conf" (trust bbox only)
+    # Below low_conf_min_conf = "pixel" (bbox region of interest)
+
+  # Primary engine (Tesseract) settings
+  primary:
+    engine: tesseract
+    weight: 1.0
+    # All primary words included; status determined by confidence
+
+  # Secondary engine settings
+  secondary:
+    vote_min_conf: 40.0           # Min conf to participate in text voting
+    solo_min_conf: 85.0           # Min conf to add word without primary
+    solo_high_conf: 95.0          # Min conf to add without corroboration
+
+    engines:
+      easyocr:
+        enabled: true
+        weight: 0.6               # Lower weight - bbox is estimated from line
+        garbage_penalty: 0.1      # Multiplier when garbage detected
+        bbox_type: line           # line or word - affects matching strategy
+      doctr:
+        enabled: false            # Enable when needed
+        weight: 1.1               # Best text accuracy
+        garbage_penalty: 0.1
+        bbox_type: word
+      paddleocr:
+        enabled: false            # Enable when needed
+        weight: 0.5               # Poor on degraded docs
+        garbage_penalty: 0.1
+        bbox_type: line
+
+  # Garbage text detection
+  garbage_detection:
+    enabled: true
+    min_alnum_ratio: 0.6          # Minimum alphanumeric character ratio
+    max_consonant_run: 4          # Max consecutive consonants before flagged
+    mixed_case_penalty: true      # Penalize "ImLIudz" style text
+
+# Engine-specific OCR settings
+ocr:
+  tesseract:
+    psm: 6                        # Page segmentation mode (6 = uniform block)
+    oem: 3                        # OCR engine mode (3 = default)
+
+  easyocr:
+    decoder: greedy               # greedy or beamsearch
+    beamWidth: 5                  # Only used if decoder=beamsearch
+    text_threshold: 0.7           # Detection confidence threshold
+    low_text: 0.4                 # Text region threshold
+    contrast_ths: 0.1             # Contrast threshold
+    adjust_contrast: 0.5          # Contrast adjustment
+    width_ths: 0.5                # Width threshold for merging
+    mag_ratio: 1.0                # Internal upscaling ratio
+
+  paddleocr:
+    use_angle_cls: true
+    lang: en
+    use_gpu: false
+
+  doctr:
+    pretrained: true
+    assume_straight_pages: true
+
+# Output settings
+output:
+  csv:
+    include_all_engines: true     # Include raw text from all engines
+    include_distances: true       # Include Levenshtein distances
+    include_pixel_detections: true  # Include status=pixel rows
