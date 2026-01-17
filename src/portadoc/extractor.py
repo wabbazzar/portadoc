@@ -22,6 +22,8 @@ def extract_words(
     gpu: bool = False,
     preprocess: Optional[str] = "auto",
     triage: Optional[str] = None,
+    tesseract_psm: int = 3,
+    tesseract_oem: int = 3,
     progress_callback: Optional[callable] = None,
 ) -> Document:
     """
@@ -36,6 +38,8 @@ def extract_words(
         gpu: Whether to use GPU for EasyOCR (default: False)
         preprocess: Preprocessing level - "none", "light", "standard", "aggressive", or "auto"
         triage: Triage level - "strict", "normal", "permissive", or None (no triage)
+        tesseract_psm: Tesseract page segmentation mode (0-13, default 3)
+        tesseract_oem: Tesseract OCR engine mode (0-3, default 3)
         progress_callback: Optional callback(page_num, total_pages, stage) for progress reporting
 
     Returns:
@@ -83,8 +87,9 @@ def extract_words(
             easy_words = []
 
             if tesseract_ok:
+                tess_config = f"--psm {tesseract_psm} --oem {tesseract_oem}"
                 tess_words = extract_words_tesseract(
-                    ocr_image, page_num, page_width, page_height
+                    ocr_image, page_num, page_width, page_height, config=tess_config
                 )
 
             if easyocr_ok:

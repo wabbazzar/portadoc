@@ -52,7 +52,19 @@ def main():
     default="auto",
     help="Preprocessing level for OCR (default: auto)"
 )
-def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool, preprocess: str):
+@click.option(
+    "--psm",
+    type=int,
+    default=3,
+    help="Tesseract page segmentation mode 0-13 (default: 3)"
+)
+@click.option(
+    "--oem",
+    type=int,
+    default=3,
+    help="Tesseract OCR engine mode 0-3 (default: 3)"
+)
+def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool, preprocess: str, psm: int, oem: int):
     """
     Extract words and bounding boxes from a PDF.
 
@@ -83,6 +95,8 @@ def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: 
             dpi=dpi,
             triage=triage,
             preprocess=preprocess,
+            tesseract_psm=psm,
+            tesseract_oem=oem,
             progress_callback=progress_callback if progress else None,
         )
 
@@ -165,6 +179,18 @@ def check():
     default="auto",
     help="Preprocessing level for OCR (default: auto)"
 )
+@click.option(
+    "--psm",
+    type=int,
+    default=3,
+    help="Tesseract page segmentation mode 0-13 (default: 3)"
+)
+@click.option(
+    "--oem",
+    type=int,
+    default=3,
+    help="Tesseract OCR engine mode 0-3 (default: 3)"
+)
 def evaluate_cmd(
     pdf_path: Path,
     ground_truth: Path,
@@ -173,6 +199,8 @@ def evaluate_cmd(
     iou_threshold: float,
     verbose: bool,
     preprocess: str,
+    psm: int,
+    oem: int,
 ):
     """
     Evaluate extraction against ground truth CSV.
@@ -184,7 +212,7 @@ def evaluate_cmd(
 
     try:
         # Extract words
-        doc = extract_words(pdf_path, dpi=dpi, triage=triage, preprocess=preprocess)
+        doc = extract_words(pdf_path, dpi=dpi, triage=triage, preprocess=preprocess, tesseract_psm=psm, tesseract_oem=oem)
 
         # Evaluate
         result = evaluate(doc, ground_truth, iou_threshold=iou_threshold)

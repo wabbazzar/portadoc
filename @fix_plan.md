@@ -88,13 +88,31 @@
 - [ ] Add cv2.resize upscaling (INTER_CUBIC or INTER_LANCZOS4) before OCR
 - [ ] Test different sharpening kernel strengths
 
-### Phase 3: OCR Engine Tuning
-- [ ] In tesseract.py: test PSM modes 6 (block), 11 (sparse), 12 (sparse + OSD)
-- [ ] In tesseract.py: test OEM 0 (legacy), 1 (LSTM), 2 (combined)
-- [ ] Add `--psm` and `--oem` CLI flags, pass to tesseract wrapper
+### Phase 3: OCR Engine Tuning - PARTIAL
+- [x] Add `--psm` and `--oem` CLI flags, pass to tesseract wrapper
+- [x] In tesseract.py: test PSM modes 6 (block), 11 (sparse), 12 (sparse + OSD)
+- [x] In tesseract.py: test OEM 0 (legacy), 1 (LSTM), 2 (combined)
+  - OEM 0/2 require legacy traineddata (not installed), only OEM 1/3 work
 - [ ] In easyocr.py: test decoder='beamsearch' (currently 'greedy')
 - [ ] In easyocr.py: tune contrast_ths (default 0.1), adjust_contrast (default True)
 - [ ] In easyocr.py: tune text_threshold (default 0.7), width_ths (default 0.5)
+
+**PSM Mode Results (preprocess=none, DPI=300):**
+| PSM | Precision | Recall | F1 | Text Match |
+|-----|-----------|--------|-----|------------|
+| 3 (default) | 70.39% | 84.79% | 76.92% | 38.53% |
+| **6 (block)** | 70.42% | 87.28% | **77.95%** | 40.29% |
+| 11 (sparse) | 67.51% | 86.53% | 75.85% | 39.77% |
+| 12 (sparse+OSD) | 66.60% | 86.03% | 75.08% | 39.42% |
+
+**Best PSM 6 + DPI Combinations:**
+| Config | Precision | Recall | F1 | Text Match |
+|--------|-----------|--------|-----|------------|
+| PSM 6, DPI 300 | 70.42% | 87.28% | **77.95%** | 40.29% |
+| PSM 6, DPI 100 | 66.44% | 74.56% | 70.27% | 66.56% |
+| PSM 3, DPI 100 | 63.21% | 69.83% | 66.35% | **69.29%** |
+
+**KEY INSIGHT:** PSM 6 gives best F1 (77.95%) at DPI 300. For text accuracy, lower DPI (100) still wins.
 
 ### Phase 4: Alternative OCR Engines
 - [ ] Install PaddleOCR: `pip install paddlepaddle paddleocr`
@@ -138,4 +156,5 @@ PYTHONPATH=src python3 -m portadoc.cli eval data/input/peter_lou_50dpi.pdf data/
 | Config | Precision | Recall | F1 | Text Match |
 |--------|-----------|--------|-----|------------|
 | auto (old default) | 51.61% | 55.86% | 53.65% | 22.77% |
-| **none, DPI=100** | 63.21% | 69.83% | 66.35% | **69.29%** |
+| none, DPI=100 | 63.21% | 69.83% | 66.35% | **69.29%** |
+| **none, PSM=6, DPI=300** | 70.42% | 87.28% | **77.95%** | 40.29% |
