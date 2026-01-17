@@ -164,6 +164,7 @@ main {
     background: var(--bg-secondary);
     border-radius: 8px;
     overflow: hidden;
+    min-height: 0; /* Allow flex child to shrink */
 }
 
 .list-header {
@@ -186,11 +187,23 @@ main {
 }
 
 #words-table {
-    flex: 1;
     width: 100%;
     border-collapse: collapse;
     font-size: 0.85rem;
+}
+
+/* Make tbody scrollable */
+#words-tbody {
+    display: block;
     overflow-y: auto;
+    max-height: calc(100vh - 250px);
+}
+
+#words-table thead,
+#words-table tbody tr {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
 }
 
 #words-table thead {
