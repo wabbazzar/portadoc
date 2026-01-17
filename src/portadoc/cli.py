@@ -64,7 +64,19 @@ def main():
     default=3,
     help="Tesseract OCR engine mode 0-3 (default: 3)"
 )
-def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool, preprocess: str, psm: int, oem: int):
+@click.option(
+    "--easyocr-decoder",
+    type=click.Choice(["greedy", "beamsearch"]),
+    default="greedy",
+    help="EasyOCR decoder type (default: greedy)"
+)
+@click.option(
+    "--easyocr-text-threshold",
+    type=float,
+    default=0.7,
+    help="EasyOCR text detection threshold 0.0-1.0 (default: 0.7)"
+)
+def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: str | None, progress: bool, preprocess: str, psm: int, oem: int, easyocr_decoder: str, easyocr_text_threshold: float):
     """
     Extract words and bounding boxes from a PDF.
 
@@ -97,6 +109,8 @@ def extract(pdf_path: Path, output: Path | None, format: str, dpi: int, triage: 
             preprocess=preprocess,
             tesseract_psm=psm,
             tesseract_oem=oem,
+            easyocr_decoder=easyocr_decoder,
+            easyocr_text_threshold=easyocr_text_threshold,
             progress_callback=progress_callback if progress else None,
         )
 
@@ -191,6 +205,18 @@ def check():
     default=3,
     help="Tesseract OCR engine mode 0-3 (default: 3)"
 )
+@click.option(
+    "--easyocr-decoder",
+    type=click.Choice(["greedy", "beamsearch"]),
+    default="greedy",
+    help="EasyOCR decoder type (default: greedy)"
+)
+@click.option(
+    "--easyocr-text-threshold",
+    type=float,
+    default=0.7,
+    help="EasyOCR text detection threshold 0.0-1.0 (default: 0.7)"
+)
 def evaluate_cmd(
     pdf_path: Path,
     ground_truth: Path,
@@ -201,6 +227,8 @@ def evaluate_cmd(
     preprocess: str,
     psm: int,
     oem: int,
+    easyocr_decoder: str,
+    easyocr_text_threshold: float,
 ):
     """
     Evaluate extraction against ground truth CSV.
@@ -212,7 +240,11 @@ def evaluate_cmd(
 
     try:
         # Extract words
-        doc = extract_words(pdf_path, dpi=dpi, triage=triage, preprocess=preprocess, tesseract_psm=psm, tesseract_oem=oem)
+        doc = extract_words(
+            pdf_path, dpi=dpi, triage=triage, preprocess=preprocess,
+            tesseract_psm=psm, tesseract_oem=oem,
+            easyocr_decoder=easyocr_decoder, easyocr_text_threshold=easyocr_text_threshold
+        )
 
         # Evaluate
         result = evaluate(doc, ground_truth, iou_threshold=iou_threshold)

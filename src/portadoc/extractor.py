@@ -24,6 +24,8 @@ def extract_words(
     triage: Optional[str] = None,
     tesseract_psm: int = 3,
     tesseract_oem: int = 3,
+    easyocr_decoder: str = "greedy",
+    easyocr_text_threshold: float = 0.7,
     progress_callback: Optional[callable] = None,
 ) -> Document:
     """
@@ -40,6 +42,8 @@ def extract_words(
         triage: Triage level - "strict", "normal", "permissive", or None (no triage)
         tesseract_psm: Tesseract page segmentation mode (0-13, default 3)
         tesseract_oem: Tesseract OCR engine mode (0-3, default 3)
+        easyocr_decoder: EasyOCR decoder - "greedy" or "beamsearch" (default: greedy)
+        easyocr_text_threshold: EasyOCR text detection threshold (default: 0.7)
         progress_callback: Optional callback(page_num, total_pages, stage) for progress reporting
 
     Returns:
@@ -94,7 +98,8 @@ def extract_words(
 
             if easyocr_ok:
                 easy_words = extract_words_easyocr(
-                    ocr_image, page_num, page_width, page_height, gpu=gpu
+                    ocr_image, page_num, page_width, page_height, gpu=gpu,
+                    decoder=easyocr_decoder, text_threshold=easyocr_text_threshold
                 )
 
             # Harmonize results if both engines available, else use what we have

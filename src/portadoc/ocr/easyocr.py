@@ -26,6 +26,11 @@ def extract_words_easyocr(
     page_height: float,
     lang: list[str] = ["en"],
     gpu: bool = False,
+    decoder: str = "greedy",
+    contrast_ths: float = 0.1,
+    adjust_contrast: float = 0.5,
+    text_threshold: float = 0.7,
+    width_ths: float = 0.5,
 ) -> list[Word]:
     """
     Extract words from an image using EasyOCR.
@@ -41,6 +46,11 @@ def extract_words_easyocr(
         page_height: Page height in PDF points
         lang: List of language codes (default: English)
         gpu: Whether to use GPU (default: False for CPU-only)
+        decoder: Decoder type - "greedy" or "beamsearch" (default: greedy)
+        contrast_ths: Contrast threshold for auto-adjustment (default: 0.1)
+        adjust_contrast: Contrast adjustment factor (default: 0.5)
+        text_threshold: Text detection confidence threshold (default: 0.7)
+        width_ths: Width threshold for merging boxes (default: 0.5)
 
     Returns:
         List of Word objects with bounding boxes in PDF coordinates
@@ -50,7 +60,14 @@ def extract_words_easyocr(
 
     # EasyOCR returns: list of (bbox, text, confidence)
     # bbox is [[x1,y1], [x2,y1], [x2,y2], [x1,y2]] (4 corners)
-    results = reader.readtext(image)
+    results = reader.readtext(
+        image,
+        decoder=decoder,
+        contrast_ths=contrast_ths,
+        adjust_contrast=adjust_contrast,
+        text_threshold=text_threshold,
+        width_ths=width_ths,
+    )
 
     words = []
     scale_x = page_width / img_width
