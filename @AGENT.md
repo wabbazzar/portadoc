@@ -1,158 +1,126 @@
-# Agent Build Instructions
+# Portadoc - Agent Build Instructions
 
 ## Project Setup
+
+### System Dependencies
 ```bash
-# Install dependencies (example for Node.js project)
-npm install
+# Install Tesseract OCR
+sudo apt-get update
+sudo apt-get install -y tesseract-ocr tesseract-ocr-eng
 
-# Or for Python project
+# Verify installation
+tesseract --version
+```
+
+### Python Environment
+```bash
+# Create virtual environment (optional but recommended)
+python3 -m venv venv
+source venv/bin/activate
+
+# Install Python dependencies
 pip install -r requirements.txt
+```
 
-# Or for Rust project  
-cargo build
+## Running the Application
+
+### CLI Usage
+```bash
+# Extract words from PDF to CSV
+python -m portadoc.cli extract data/input/peter_lou.pdf -o output.csv
+
+# Extract with JSON output
+python -m portadoc.cli extract data/input/peter_lou.pdf --format json -o output.json
+
+# Process degraded PDF
+python -m portadoc.cli extract data/input/peter_lou_50dpi.pdf -o degraded_output.csv
+```
+
+### FastAPI Server (when implemented)
+```bash
+# Start development server
+uvicorn portadoc.api:app --reload --port 8000
+
+# API endpoints:
+# POST /api/v1/extract - Upload PDF for processing
+# GET /api/v1/jobs/{job_id} - Check job status
 ```
 
 ## Running Tests
 ```bash
-# Node.js
-npm test
-
-# Python
+# Run all tests
 pytest
 
-# Rust
-cargo test
+# Run with coverage
+pytest --cov=src/portadoc tests/ --cov-report=term-missing
+
+# Run specific test file
+pytest tests/test_ocr.py -v
 ```
 
-## Build Commands
+## Validation
 ```bash
-# Production build
-npm run build
-# or
-cargo build --release
-```
+# Compare output to ground truth
+python -m portadoc.cli extract data/input/peter_lou.pdf -o data/output/test.csv
+diff data/output/test.csv data/input/peter_lou_words_slim.csv
 
-## Development Server
-```bash
-# Start development server
-npm run dev
-# or
-cargo run
+# Check word count
+wc -l data/output/test.csv  # Should be 402 (401 words + header)
 ```
 
 ## Key Learnings
-- Update this section when you learn new build optimizations
-- Document any gotchas or special setup requirements
-- Keep track of the fastest test/build cycle
+- Tesseract provides word-level boxes via `image_to_data()` with Output.DICT
+- EasyOCR returns line-level boxes that need word decomposition
+- PDF coordinates use points (1/72 inch), origin at bottom-left
+- Image coordinates use pixels, origin at top-left - transformation required
+- For degraded images: upscale before OCR, use adaptive thresholding
+- Pixel detection fallback catches logos, signatures, and obscured text
+
+## Project Structure
+```
+src/portadoc/
+├── __init__.py
+├── cli.py           # Command line interface
+├── api.py           # FastAPI endpoints
+├── pdf.py           # PDF loading and conversion
+├── preprocessing.py # OpenCV image enhancement
+├── ocr/
+│   ├── __init__.py
+│   ├── tesseract.py # Tesseract wrapper
+│   ├── easyocr.py   # EasyOCR wrapper
+│   └── harmonizer.py # Multi-engine result merging
+├── detection.py     # Pixel-based text detection fallback
+├── models.py        # Data structures (Word, BBox, Page)
+└── output.py        # CSV/JSON formatters
+```
 
 ## Feature Development Quality Standards
 
-**CRITICAL**: All new features MUST meet the following mandatory requirements before being considered complete.
+**CRITICAL**: All new features MUST meet these requirements before being considered complete.
 
 ### Testing Requirements
+- Minimum 85% code coverage for new code
+- All tests must pass
+- Unit tests for business logic
+- Integration tests comparing output to ground truth
 
-- **Minimum Coverage**: 85% code coverage ratio required for all new code
-- **Test Pass Rate**: 100% - all tests must pass, no exceptions
-- **Test Types Required**:
-  - Unit tests for all business logic and services
-  - Integration tests for API endpoints or main functionality
-  - End-to-end tests for critical user workflows
-- **Coverage Validation**: Run coverage reports before marking features complete:
-  ```bash
-  # Examples by language/framework
-  npm run test:coverage
-  pytest --cov=src tests/ --cov-report=term-missing
-  cargo tarpaulin --out Html
-  ```
-- **Test Quality**: Tests must validate behavior, not just achieve coverage metrics
-- **Test Documentation**: Complex test scenarios must include comments explaining the test strategy
+### Git Workflow
+1. Commit with conventional messages: `feat:`, `fix:`, `test:`, etc.
+2. Push to remote after each completed feature
+3. Update @fix_plan.md with progress
 
-### Git Workflow Requirements
+### Validation Checkpoints
+After each feature:
+- [ ] Tests pass with `pytest`
+- [ ] Output matches ground truth (401 words, correct bounding boxes)
+- [ ] Works on both clean and degraded PDFs
+- [ ] @fix_plan.md updated
+- [ ] Changes committed and pushed
 
-Before moving to the next feature, ALL changes must be:
-
-1. **Committed with Clear Messages**:
-   ```bash
-   git add .
-   git commit -m "feat(module): descriptive message following conventional commits"
-   ```
-   - Use conventional commit format: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, etc.
-   - Include scope when applicable: `feat(api):`, `fix(ui):`, `test(auth):`
-   - Write descriptive messages that explain WHAT changed and WHY
-
-2. **Pushed to Remote Repository**:
-   ```bash
-   git push origin <branch-name>
-   ```
-   - Never leave completed features uncommitted
-   - Push regularly to maintain backup and enable collaboration
-   - Ensure CI/CD pipelines pass before considering feature complete
-
-3. **Branch Hygiene**:
-   - Work on feature branches, never directly on `main`
-   - Branch naming convention: `feature/<feature-name>`, `fix/<issue-name>`, `docs/<doc-update>`
-   - Create pull requests for all significant changes
-
-4. **Ralph Integration**:
-   - Update @fix_plan.md with new tasks before starting work
-   - Mark items complete in @fix_plan.md upon completion
-   - Update PROMPT.md if development patterns change
-   - Test features work within Ralph's autonomous loop
-
-### Documentation Requirements
-
-**ALL implementation documentation MUST remain synchronized with the codebase**:
-
-1. **Code Documentation**:
-   - Language-appropriate documentation (JSDoc, docstrings, etc.)
-   - Update inline comments when implementation changes
-   - Remove outdated comments immediately
-
-2. **Implementation Documentation**:
-   - Update relevant sections in this AGENT.md file
-   - Keep build and test commands current
-   - Update configuration examples when defaults change
-   - Document breaking changes prominently
-
-3. **README Updates**:
-   - Keep feature lists current
-   - Update setup instructions when dependencies change
-   - Maintain accurate command examples
-   - Update version compatibility information
-
-4. **AGENT.md Maintenance**:
-   - Add new build patterns to relevant sections
-   - Update "Key Learnings" with new insights
-   - Keep command examples accurate and tested
-   - Document new testing patterns or quality gates
-
-### Feature Completion Checklist
-
-Before marking ANY feature as complete, verify:
-
-- [ ] All tests pass with appropriate framework command
-- [ ] Code coverage meets 85% minimum threshold
-- [ ] Coverage report reviewed for meaningful test quality
-- [ ] Code formatted according to project standards
-- [ ] Type checking passes (if applicable)
-- [ ] All changes committed with conventional commit messages
-- [ ] All commits pushed to remote repository
-- [ ] @fix_plan.md task marked as complete
-- [ ] Implementation documentation updated
-- [ ] Inline code comments updated or added
-- [ ] AGENT.md updated (if new patterns introduced)
-- [ ] Breaking changes documented
-- [ ] Features tested within Ralph loop (if applicable)
-- [ ] CI/CD pipeline passes
-
-### Rationale
-
-These standards ensure:
-- **Quality**: High test coverage and pass rates prevent regressions
-- **Traceability**: Git commits and @fix_plan.md provide clear history of changes
-- **Maintainability**: Current documentation reduces onboarding time and prevents knowledge loss
-- **Collaboration**: Pushed changes enable team visibility and code review
-- **Reliability**: Consistent quality gates maintain production stability
-- **Automation**: Ralph integration ensures continuous development practices
-
-**Enforcement**: AI agents should automatically apply these standards to all feature development tasks without requiring explicit instruction for each task.
+## Dependencies
+See `requirements.txt` for full list. Core dependencies:
+- pymupdf (PDF rendering)
+- opencv-python (image preprocessing)
+- pytesseract (Tesseract OCR)
+- easyocr (secondary OCR)
+- fastapi + uvicorn (web API)

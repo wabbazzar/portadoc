@@ -1,0 +1,17 @@
+"""Portadoc - PDF Word Extraction for Document Redaction."""
+
+__version__ = "0.1.0"
+
+from .models import BBox, Document, Page, Word
+from .extractor import extract_words, extract_to_csv
+from .pdf import load_pdf
+
+__all__ = [
+    "BBox",
+    "Document",
+    "Page",
+    "Word",
+    "extract_words",
+    "extract_to_csv",
+    "load_pdf",
+]
