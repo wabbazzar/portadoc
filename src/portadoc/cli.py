@@ -95,5 +95,76 @@ def check():
         click.echo("  Install with: pip install easyocr")
 
 
+@main.command("eval")
+@click.argument("pdf_path", type=click.Path(exists=True, path_type=Path))
+@click.argument("ground_truth", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--dpi",
+    type=int,
+    default=300,
+    help="DPI for PDF rendering (default: 300)"
+)
+@click.option(
+    "--triage",
+    type=click.Choice(["strict", "normal", "permissive"]),
+    default=None,
+    help="Triage level to filter low-confidence detections"
+)
+@click.option(
+    "--iou-threshold",
+    type=float,
+    default=0.5,
+    help="IoU threshold for matching (default: 0.5)"
+)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    help="Show detailed match information"
+)
+def evaluate_cmd(
+    pdf_path: Path,
+    ground_truth: Path,
+    dpi: int,
+    triage: str | None,
+    iou_threshold: float,
+    verbose: bool,
+):
+    """
+    Evaluate extraction against ground truth CSV.
+
+    PDF_PATH is the path to the input PDF file.
+    GROUND_TRUTH is the path to the ground truth CSV.
+    """
+    from .metrics import evaluate
+
+    try:
+        # Extract words
+        doc = extract_words(pdf_path, dpi=dpi, triage=triage)
+
+        # Evaluate
+        result = evaluate(doc, ground_truth, iou_threshold=iou_threshold)
+
+        # Print summary
+        click.echo(result.summary())
+
+        if verbose and result.unmatched_gt:
+            click.echo("\nMissed Ground Truth Words:")
+            for w in result.unmatched_gt[:10]:
+                click.echo(f"  Page {w.page}: {repr(w.text)}")
+            if len(result.unmatched_gt) > 10:
+                click.echo(f"  ... and {len(result.unmatched_gt) - 10} more")
+
+        if verbose and result.false_positive_words:
+            click.echo("\nFalse Positive Words:")
+            for w in result.false_positive_words[:10]:
+                click.echo(f"  Page {w.page}: {repr(w.text)}")
+            if len(result.false_positive_words) > 10:
+                click.echo(f"  ... and {len(result.false_positive_words) - 10} more")
+
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()

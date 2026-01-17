@@ -25,7 +25,10 @@
   - Filters by: min confidence, text length, aspect ratio, area, punctuation
   - CLI: --triage flag (strict|normal|permissive)
   - Results: no triage=418, permissive=415, normal=407, strict=402 (GT=401)
-- [ ] Create evaluation metrics (recall, precision, IoU vs ground truth)
+- [x] Create evaluation metrics (recall, precision, IoU vs ground truth)
+  - Implemented in metrics.py: precision, recall, F1, mean IoU, text match rate
+  - CLI: `eval` command compares extraction to ground truth CSV
+  - Results (no triage): 98.50% recall, 94.50% precision, 96.46% F1
 
 ## Low Priority (Web Service & Polish)
 
@@ -97,4 +100,15 @@
 - Normal: 407 words
 - Strict: 402 words (very close to GT=401)
 
-Next task: Create evaluation metrics (recall, precision, IoU)
+**✓ Evaluation metrics implemented** (metrics.py)
+
+**Evaluation results (peter_lou.pdf vs ground truth):**
+| Config | Precision | Recall | F1 | Words |
+|--------|-----------|--------|-----|-------|
+| No triage | 94.50% | **98.50%** | 96.46% | 418 |
+| Normal | 94.59% | 96.01% | 95.30% | 407 |
+| Strict | 94.78% | 95.01% | 94.89% | 402 |
+
+For redaction, no triage recommended (highest recall).
+
+All Medium Priority tasks complete. Next: Low Priority items (FastAPI, async, etc.)
