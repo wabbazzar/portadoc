@@ -223,6 +223,66 @@ PDF → Image → [Preprocess] → [Super-res] → Multi-OCR → Harmonize → O
 
 ---
 
+## Git Practices
+
+### Commit Strategy (MANDATORY)
+
+**Commit after EVERY meaningful change - NO EXCEPTIONS**
+
+1. **Test First**: Always verify changes work before committing
+2. **Commit Immediately**: After each phase/feature completion
+3. **Break Large Changes**: If a task takes >30 min, break into sub-commits
+4. **Clean Messages**: NO "Co-Authored-By: Claude" or emoji in commits
+
+### Commit Message Standards
+
+Follow Conventional Commits format:
+
+```
+<type>(<scope>): <subject under 50 chars>
+
+<body (optional)>
+- Brief explanation of what changed
+- Why this change was needed
+```
+
+**Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+
+**Scopes** (common for portadoc):
+`ocr`, `harmonize`, `cli`, `web`, `config`, `models`, `metrics`, `tests`, `pipeline`
+
+**Examples**:
+```
+feat(ocr): add Surya engine with polygon bbox support
+fix(harmonize): resolve duplicate word detection threshold
+refactor(cli): consolidate extraction flags
+test(metrics): add F1 score boundary tests
+chore(deps): update PyMuPDF to 1.24.0
+```
+
+### Recovery Protocol
+
+If anything breaks:
+```bash
+git log --oneline -5           # See recent commits
+git reset --hard <commit>      # Rollback to working state
+git diff HEAD~1               # See what changed in last commit
+```
+
+### Git Commands Reference
+
+```bash
+git status                    # Current state
+git diff                      # Unstaged changes
+git diff --staged             # Staged changes
+git log --oneline -10         # Recent history
+git add -p                    # Interactive staging
+git stash                     # Save work temporarily
+git stash pop                 # Restore stashed work
+```
+
+---
+
 ## Dev Guidelines
 
 ### Always
@@ -230,11 +290,13 @@ PDF → Image → [Preprocess] → [Super-res] → Multi-OCR → Harmonize → O
 - Update Makefile when adding CLI commands
 - Test on both clean and degraded PDFs
 - Keep changes minimal and focused
+- **Commit after completing each task**
 
 ### Never
 - Commit to main without testing
 - Add GPU/CUDA dependencies (CPU-only)
 - Over-engineer or add unnecessary features
+- **Add "Co-Authored-By: Claude" to commits**
 
 ### Makefile Convention
 ```makefile
