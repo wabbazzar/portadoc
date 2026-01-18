@@ -49,6 +49,11 @@ def is_garbage_text(text: str, config: Optional[PortadocConfig] = None) -> bool:
     if not text or len(text) < 2:
         return True
 
+    # Exempt email-like and URL-like patterns from garbage detection
+    # These often have long consonant runs (e.g., "pdxgmail")
+    if "@" in text or ".com" in text.lower() or ".org" in text.lower():
+        return False
+
     # Low alphanumeric ratio
     alnum = sum(c.isalnum() for c in text)
     if alnum / len(text) < gc.min_alnum_ratio:
@@ -172,6 +177,7 @@ def find_word_match(
     iou_threshold: float,
     text_match_bonus: float = 0.15,
     center_distance_max: float = 12.0,
+    y_band_tolerance: float = 10.0,
 ) -> Optional[MatchResult]:
     """
     Match a word-level primary to a word-level secondary using IoU.
@@ -181,6 +187,11 @@ def find_word_match(
     within center_distance_max and text matches, treat as a match even with
     very low IoU.
 
+    Also supports containment-based matching: if secondary has high confidence
+    (>=90) and primary has low confidence (<=30), and one bbox's center is
+    inside the other, treat as a match. This helps match Surya's accurate
+    readings with Tesseract's garbage readings.
+
     Args:
         primary: Primary word
         words: Secondary words
@@ -188,6 +199,7 @@ def find_word_match(
         iou_threshold: Minimum IoU for match
         text_match_bonus: IoU threshold reduction when text matches (default 0.15)
         center_distance_max: Max center-to-center distance for fallback match (default 12.0)
+        y_band_tolerance: Max y-center difference for match (default 10.0)
 
     Returns:
         MatchResult or None
@@ -198,13 +210,20 @@ def find_word_match(
     primary_text_lower = primary.text.lower().strip()
     primary_cx = primary.bbox.center_x
     primary_cy = primary.bbox.center_y
+    primary_conf = primary.confidence or 0
 
     for i, word in enumerate(words):
         if i in matched_ids or word.page != primary.page:
             continue
 
+        # Check vertical alignment first (Issue 2)
+        y_diff = abs(word.bbox.center_y - primary_cy)
+        if y_diff > y_band_tolerance:
+            continue
+
         iou = primary.bbox.iou(word.bbox)
         word_text_lower = word.text.lower().strip()
+        word_conf = word.confidence or 0
         text_matches = (primary_text_lower == word_text_lower)
 
         # Calculate effective threshold based on text match
@@ -222,9 +241,22 @@ def find_word_match(
             if center_dist <= center_distance_max:
                 is_match = True
 
+        # Containment-based fallback: high-conf secondary + low-conf primary + bbox overlap
+        # This helps match Surya's good readings (100%) with Tesseract's garbage (<30%)
+        if not is_match and word_conf >= 90 and primary_conf <= 30:
+            # Check if either center is inside the other bbox
+            sec_cx, sec_cy = word.bbox.center_x, word.bbox.center_y
+            primary_contains_sec = primary.bbox.contains_point(sec_cx, sec_cy)
+            sec_contains_primary = word.bbox.contains_point(primary_cx, primary_cy)
+            if primary_contains_sec or sec_contains_primary:
+                is_match = True
+
         if is_match:
             # Score combines IoU and text match bonus
             score = iou + (0.5 if text_matches else 0.0)
+            # Boost score for containment matches with high confidence
+            if word_conf >= 90 and primary_conf <= 30:
+                score += 0.3
             if score > best_score:
                 best_score = score
                 best_match = MatchResult(
@@ -237,9 +269,39 @@ def find_word_match(
     return best_match
 
 
+def is_paddle_concat(paddle_text: str, other_texts: list[str]) -> bool:
+    """
+    Detect if paddle text is a concatenation of adjacent words.
+
+    PaddleOCR sometimes reads adjacent words as one (e.g., "NORTHWESTVETERINARY").
+    This detects such cases by checking if paddle text is much longer than others
+    and contains no spaces.
+
+    Args:
+        paddle_text: Text from PaddleOCR
+        other_texts: Texts from other engines for comparison
+
+    Returns:
+        True if paddle text appears to be concatenated
+    """
+    if not paddle_text or " " in paddle_text:
+        return False
+
+    # Compare to other engine texts
+    for other in other_texts:
+        if not other:
+            continue
+        # If paddle text is >1.5x longer and has no spaces, likely concatenated
+        if len(paddle_text) > len(other) * 1.5:
+            return True
+
+    return False
+
+
 def weighted_vote(
     votes: list[tuple[str, str, float]],  # (engine, text, confidence)
     config: PortadocConfig,
+    known_words: set[str] | None = None,
 ) -> str:
     """
     Vote on text with weights and garbage penalty.
@@ -247,6 +309,7 @@ def weighted_vote(
     Args:
         votes: List of (engine, text, confidence) tuples
         config: Configuration
+        known_words: Optional set of known-good words for similarity checking
 
     Returns:
         Winning text
@@ -256,6 +319,10 @@ def weighted_vote(
 
     scores: dict[str, float] = defaultdict(float)
     originals: dict[str, str] = {}
+
+    # Collect non-paddle texts for concatenation check
+    non_paddle_texts = [text for eng, text, _ in votes if eng != "paddleocr" and text.strip()]
+    paddle_text = next((text for eng, text, _ in votes if eng == "paddleocr"), None)
 
     for engine, text, conf in votes:
         if not text.strip():
@@ -279,6 +346,33 @@ def weighted_vote(
             penalty = eng_config.garbage_penalty if eng_config else 0.1
             weight *= penalty
 
+        # Paddle concatenation penalty (Issue 3)
+        if engine == "paddleocr" and is_paddle_concat(text, non_paddle_texts):
+            weight *= 0.1
+
+        # Known-word similarity bonus (Issue 5)
+        # If text contains parts similar to known words, boost its score
+        if known_words and len(text) > 5:
+            # Extract potential words from text (split by non-alphanumeric)
+            import re
+            parts = re.split(r'[^a-zA-Z]+', text.lower())
+            best_similarity = 0.0
+            for part in parts:
+                if len(part) < 3:
+                    continue
+                for known in known_words:
+                    if len(known) < 3:
+                        continue
+                    # Check similarity
+                    dist = levenshtein_distance(part, known.lower())
+                    similarity = 1 - (dist / max(len(part), len(known)))
+                    if similarity > best_similarity:
+                        best_similarity = similarity
+            # Apply scaled boost based on best similarity (0.7+ threshold)
+            if best_similarity > 0.7:
+                # Boost scales from 1.0 (at 0.7) to 1.5 (at 1.0)
+                weight *= 1.0 + (best_similarity - 0.7) * 1.67
+
         scores[normalized] += weight
         if normalized not in originals:
             originals[normalized] = text
@@ -290,22 +384,123 @@ def weighted_vote(
     return originals[winner]
 
 
+def merge_adjacent_fragments(
+    words: list[HarmonizedWord],
+    config: PortadocConfig,
+) -> list[HarmonizedWord]:
+    """
+    Merge adjacent low-conf/pixel fragments when a secondary covers them.
+
+    When Tesseract fragments a word (e.g., microchip "985141004729856" into
+    "OBS 141 OM 725 R66"), check if a secondary-only detection covers the
+    combined span. If so, remove the fragments (keep the secondary).
+
+    Args:
+        words: List of harmonized words
+        config: Configuration
+
+    Returns:
+        Filtered list with fragments removed where secondary is better
+    """
+    # Identify secondary-only words with high confidence
+    secondary_only = [
+        w for w in words
+        if w.status == "secondary_only" and w.confidence >= 90
+    ]
+
+    if not secondary_only:
+        return words
+
+    # For each secondary-only, check if it covers primary fragments
+    to_remove: set[int] = set()  # indices of words to remove
+
+    for sec in secondary_only:
+        # Find primary fragments (primary-only, low-conf or pixel) overlapping this secondary
+        fragments = []
+        for i, w in enumerate(words):
+            if w is sec:
+                continue
+            if w.page != sec.page:
+                continue
+            # Is it a primary-only fragment? (single-letter source = no secondary match)
+            if len(w.source) != 1:
+                continue
+            if w.status not in ("low_conf", "pixel"):
+                continue
+            # Check vertical alignment (same y-band)
+            y_diff = abs(w.bbox.center_y - sec.bbox.center_y)
+            if y_diff > 15:  # Allow some tolerance
+                continue
+            # Check horizontal overlap
+            overlap_x = min(w.bbox.x1, sec.bbox.x1) - max(w.bbox.x0, sec.bbox.x0)
+            if overlap_x > 0:
+                fragments.append(i)
+
+        # If we found multiple fragments covered by this secondary, remove them
+        if len(fragments) >= 2:
+            to_remove.update(fragments)
+
+    # Filter out removed words
+    return [w for i, w in enumerate(words) if i not in to_remove]
+
+
+def should_suppress_secondary(
+    sec_word: Word,
+    primary_words: list[Word],
+    config: PortadocConfig,
+) -> bool:
+    """
+    Check if a secondary-only word should be suppressed.
+
+    Suppresses secondary words that overlap multiple primary words, which
+    indicates line-level detection or concatenation rather than a true
+    missed word.
+
+    Args:
+        sec_word: Secondary word candidate
+        primary_words: All primary words
+        config: Configuration
+
+    Returns:
+        True if the word should be suppressed
+    """
+    # Count how many primaries this secondary contains (center-based)
+    contained_count = 0
+    sec_bbox = sec_word.bbox
+
+    for primary in primary_words:
+        if primary.page != sec_word.page:
+            continue
+        # Check if primary center is inside secondary bbox
+        if sec_bbox.contains_point(primary.bbox.center_x, primary.bbox.center_y):
+            contained_count += 1
+            if contained_count > 1:
+                # Contains multiple primaries - suppress if low confidence
+                conf = sec_word.confidence or 0
+                if conf < 50:
+                    return True
+
+    return False
+
+
 def harmonize(
     primary_words: list[Word],
     secondary_results: dict[str, list[Word]],
     config: Optional[PortadocConfig] = None,
+    primary_engine: str = "tesseract",
 ) -> list[HarmonizedWord]:
     """
     Harmonize OCR results using primary-engine bbox and text voting.
 
-    Primary engine (Tesseract) provides authoritative word boundaries.
+    Primary engine provides authoritative word boundaries.
     Secondary engines vote on text only and can add high-confidence detections.
     All detections are tracked with status and Levenshtein distances.
 
     Args:
-        primary_words: Words from primary engine (Tesseract)
+        primary_words: Words from primary engine
         secondary_results: Dict of {engine_name: words} for secondary engines
         config: Configuration (uses global config if None)
+        primary_engine: Name of primary engine (for source code tracking)
 
     Returns:
         List of HarmonizedWord with full tracking
@@ -317,6 +512,37 @@ def harmonize(
     matched_secondary: dict[str, set[int]] = defaultdict(set)
     all_bboxes: list[BBox] = []
 
+    # Build known-good word set from high-confidence primaries (Issue 5)
+    known_words: set[str] = set()
+    for primary in primary_words:
+        if (primary.confidence or 0) >= 80 and len(primary.text) >= 3:
+            # Add word and potential parts (split on non-alphanumeric)
+            import re
+            known_words.add(primary.text.lower())
+            for part in re.split(r'[^a-zA-Z]+', primary.text.lower()):
+                if len(part) >= 3:
+                    known_words.add(part)
+
+    # Also add known-good words from secondaries
+    for engine, sec_words in secondary_results.items():
+        for sw in sec_words:
+            if (sw.confidence or 0) >= 90 and len(sw.text) >= 3:
+                import re
+                known_words.add(sw.text.lower())
+                for part in re.split(r'[^a-zA-Z]+', sw.text.lower()):
+                    if len(part) >= 3:
+                        known_words.add(part)
+
+    # Map engine names to source codes
+    ENGINE_CODES = {
+        "tesseract": "T",
+        "easyocr": "E",
+        "doctr": "D",
+        "paddleocr": "P",
+        "surya": "S",
+    }
+    primary_code = ENGINE_CODES.get(primary_engine, primary_engine[0].upper())
+
     # === PHASE 1: Process ALL primary words ===
     for primary in primary_words:
         hw = HarmonizedWord(
@@ -325,14 +551,25 @@ def harmonize(
             bbox=primary.bbox,
             text="",  # will be set by voting
             status="",  # will be set by confidence
-            source="T",
+            source=primary_code,
             confidence=primary.confidence or 0,
         )
-        hw.tess_text = primary.text
+
+        # Store primary engine's raw text
+        if primary_engine == "tesseract":
+            hw.tess_text = primary.text
+        elif primary_engine == "easyocr":
+            hw.easy_text = primary.text
+        elif primary_engine == "doctr":
+            hw.doctr_text = primary.text
+        elif primary_engine == "paddleocr":
+            hw.paddle_text = primary.text
+        elif primary_engine == "surya":
+            hw.surya_text = primary.text
 
         # Collect text votes from all engines
         votes: list[tuple[str, str, float]] = [
-            ("tesseract", primary.text, primary.confidence or 0)
+            (primary_engine, primary.text, primary.confidence or 0)
         ]
 
         for engine, sec_words in secondary_results.items():
@@ -346,11 +583,26 @@ def harmonize(
             if bbox_type == "line":
                 match = find_line_match(primary, sec_words, matched_secondary[engine])
             else:
+                # Use per-engine overrides if specified
+                iou_thresh = (
+                    eng_config.iou_threshold_override
+                    if eng_config and eng_config.iou_threshold_override is not None
+                    else config.harmonize.iou_threshold
+                )
+                center_dist = (
+                    eng_config.center_distance_max_override
+                    if eng_config and eng_config.center_distance_max_override is not None
+                    else config.harmonize.center_distance_max
+                )
+                # y_band_tolerance should be proportional to center_distance_max
+                # For Surya (center_dist=50), use y_band=25; for others (12), use default 10
+                y_band = max(10.0, center_dist / 2)
                 match = find_word_match(
                     primary, sec_words, matched_secondary[engine],
-                    config.harmonize.iou_threshold,
+                    iou_thresh,
                     config.harmonize.text_match_bonus,
-                    config.harmonize.center_distance_max,
+                    center_dist,
+                    y_band,
                 )
 
             if match:
@@ -361,19 +613,23 @@ def harmonize(
                     votes.append((engine, match.text, match.confidence))
 
                 # Update source string
-                engine_code = engine[0].upper()  # T, E, D, P
+                engine_code = ENGINE_CODES.get(engine, engine[0].upper())
                 hw.source += engine_code
 
-                # Store raw text
-                if engine == "easyocr":
+                # Store raw text (avoid overwriting if already set as primary)
+                if engine == "tesseract" and not hw.tess_text:
+                    hw.tess_text = match.text
+                elif engine == "easyocr" and not hw.easy_text:
                     hw.easy_text = match.text
-                elif engine == "doctr":
+                elif engine == "doctr" and not hw.doctr_text:
                     hw.doctr_text = match.text
-                elif engine == "paddleocr":
+                elif engine == "paddleocr" and not hw.paddle_text:
                     hw.paddle_text = match.text
+                elif engine == "surya" and not hw.surya_text:
+                    hw.surya_text = match.text
 
         # Vote on final text
-        hw.text = weighted_vote(votes, config)
+        hw.text = weighted_vote(votes, config, known_words)
 
         # Compute Levenshtein distances
         final_lower = hw.text.lower()
@@ -385,6 +641,8 @@ def harmonize(
             hw.dist_doctr = levenshtein_distance(hw.doctr_text.lower(), final_lower)
         if hw.paddle_text:
             hw.dist_paddle = levenshtein_distance(hw.paddle_text.lower(), final_lower)
+        if hw.surya_text:
+            hw.dist_surya = levenshtein_distance(hw.surya_text.lower(), final_lower)
 
         # Determine status by max confidence
         max_conf = max(v[2] for v in votes) if votes else 0
@@ -418,6 +676,28 @@ def harmonize(
             if overlaps:
                 continue
 
+            # Suppress secondaries that overlap multiple primaries (Issue 1)
+            if should_suppress_secondary(sec_word, primary_words, config):
+                continue
+
+            # Text-aware deduplication: skip if same text already exists on same y-band
+            # This handles wide Surya bboxes that have low IoU but duplicate text
+            sec_text_lower = sec_word.text.lower().strip('.:,')
+            sec_cy = sec_word.bbox.center_y
+            text_duplicate = False
+            for existing in result:
+                if existing.page != sec_word.page:
+                    continue
+                # Same y-band (within 15 pixels)?
+                if abs(existing.bbox.center_y - sec_cy) > 15:
+                    continue
+                # Same text?
+                if existing.text.lower().strip('.:,') == sec_text_lower and sec_text_lower:
+                    text_duplicate = True
+                    break
+            if text_duplicate:
+                continue
+
             engine_code = engine[0].upper()
             hw = HarmonizedWord(
                 word_id=-1,
@@ -439,6 +719,9 @@ def harmonize(
             elif engine == "paddleocr":
                 hw.paddle_text = sec_word.text
                 hw.dist_paddle = 0
+            elif engine == "surya":
+                hw.surya_text = sec_word.text
+                hw.dist_surya = 0
 
             # Check for corroboration from another secondary
             corroborated = False
@@ -464,6 +747,10 @@ def harmonize(
 
             result.append(hw)
             all_bboxes.append(hw.bbox)
+
+    # === PHASE 3: Merge adjacent fragments (Issue 4) ===
+    # Find low-conf/pixel primary fragments that a secondary covers better
+    result = merge_adjacent_fragments(result, config)
 
     # Assign word IDs and sort
     result.sort(key=lambda w: (w.page, w.bbox.y0, w.bbox.x0))

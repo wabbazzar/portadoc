@@ -83,18 +83,21 @@ class HarmonizedWord:
     status: str                  # word|low_conf|pixel|secondary_only
     source: str                  # T|TE|TED|E|D|P|...
     confidence: float
+    rotation: int = 0            # Page rotation angle (0, 90, 180, 270)
 
     # Raw text from each engine (empty string if not detected)
     tess_text: str = ""
     easy_text: str = ""
     doctr_text: str = ""
     paddle_text: str = ""
+    surya_text: str = ""
 
     # Levenshtein distances to final text (-1 if engine didn't detect)
     dist_tess: int = -1
     dist_easy: int = -1
     dist_doctr: int = -1
     dist_paddle: int = -1
+    dist_surya: int = -1
 
     def to_word(self) -> Word:
         """Convert to basic Word for backwards compatibility."""

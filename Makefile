@@ -111,4 +111,34 @@ peter-lou: ## Extract from peter_lou_50dpi.pdf (degraded test file)
 	$(PORTADOC) extract --no-easyocr --preprocess none --psm 6 data/input/peter_lou_50dpi.pdf
 
 peter-lou-eval: ## Evaluate peter_lou_50dpi.pdf against ground truth
-	$(PORTADOC) eval --no-easyocr --preprocess none --psm 6 data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv
+	$(PORTADOC) eval --preprocess none --psm 6 data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv
+
+peter-lou-clean: ## Extract from clean peter_lou.pdf
+	$(PORTADOC) extract --no-easyocr --preprocess none --psm 6 data/input/peter_lou.pdf
+
+##@ Reading Order Testing
+
+test-reading-order: ## Run reading order unit tests
+	$(VENV)/bin/pytest tests/test_geometric_clustering.py -v
+
+test-reading-order-integration: ## Run full reading order integration test
+	$(VENV)/bin/pytest tests/test_geometric_clustering.py::TestGroundTruthComparison -v
+
+extract-reading-order: ## Extract with reading order (default)
+	$(PORTADOC) extract --no-easyocr --preprocess none --psm 6 $(PDF) $(if $(OUTPUT),-o $(OUTPUT),)
+
+extract-no-reading-order: ## Extract with simple y,x ordering (legacy)
+	$(PORTADOC) extract --no-easyocr --preprocess none --psm 6 --no-reading-order $(PDF) $(if $(OUTPUT),-o $(OUTPUT),)
+
+##@ Utilities
+
+degrade-pdf: ## Convert PDF to 50 DPI rasterized version (use PDF=input.pdf OUTPUT=output.pdf)
+	@if [ -z "$(OUTPUT)" ]; then \
+		echo "Usage: make degrade-pdf PDF=input.pdf OUTPUT=output_50dpi.pdf"; \
+		exit 1; \
+	fi
+	@mkdir -p tmp/pdf_convert
+	pdftoppm -r 50 -png $(PDF) tmp/pdf_convert/page
+	$(VENV)/bin/img2pdf tmp/pdf_convert/page-*.png --pagesize letter -o $(OUTPUT)
+	@rm -rf tmp/pdf_convert
+	@echo "Created $(OUTPUT) at 50 DPI"

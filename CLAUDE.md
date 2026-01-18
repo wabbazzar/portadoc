@@ -1,126 +1,258 @@
 # Portadoc
 
-PDF word extraction system for document redaction.
+PDF word extraction for document redaction. Extracts text with word-level bounding boxes using multi-engine OCR (Tesseract, EasyOCR, PaddleOCR, docTR, Surya) with smart harmonization.
 
-## Quick Start (Makefile)
+## For Agents
 
-Run `make help` to see all available commands. Common usage:
+**Before you do anything:** Use `./portadoc` from repo root (auto-uses venv) or `source .venv/bin/activate`
 
-```bash
-make check              # Check OCR engine availability
-make extract-smart      # Extract with best config for degraded PDFs
-make eval-smart         # Evaluate against ground truth
-make peter-lou-eval     # Quick eval on test file
+### What type of work is this?
 
-# Custom PDF:
-make extract-smart PDF=path/to/your.pdf
-make eval-smart PDF=path/to/your.pdf GROUND_TRUTH=path/to/truth.csv
+| Type | Where to Look |
+|------|---------------|
+| **Ralph ticket (autonomous)** | Check `docs/tickets/` for RALPH-* ticket, set up required files |
+| **Claude ticket (interactive)** | Check `docs/tickets/` for CLAUDE-* ticket |
+| **Quick fix or exploration** | This file has what you need |
+
+### Tickets
+
+Active tickets live in `docs/tickets/`. Two types:
+
+- **[RALPH]** - Autonomous agent loops. Requires setup files (see below).
+- **[CLAUDE]** - Interactive sessions. Single session, conversational.
+
+Templates: `docs/tickets/TEMPLATE_RALPH.md`, `docs/tickets/TEMPLATE_CLAUDE.md`
+
+Completed: `docs/tickets/archive/`
+Paused: `docs/tickets/freezer/`
+
+---
+
+## Ralph System
+
+Ralph runs autonomous development loops. Each iteration gets fresh context, works through `@fix_plan.md`, and reports status.
+
+### Required Files for Ralph
+
+Before starting a Ralph session, these must exist in project root:
+
+| File | Purpose |
+|------|---------|
+| `PROMPT.md` | Instructions for Ralph (objectives, validation, status format) |
+| `@fix_plan.md` | Task checklist with `[ ]` / `[x]` items |
+| `@AGENT.md` | Build, test, run instructions |
+| `specs/` | Specifications Ralph references |
+
+Optional: `.claude/settings.json` (sandbox permissions), `screenshots/` (GUI verification)
+
+### Ralph Status Block
+
+Ralph must output this at end of every response:
+
+```
+---RALPH_STATUS---
+STATUS: IN_PROGRESS | COMPLETE | BLOCKED
+TASKS_COMPLETED_THIS_LOOP: <number>
+FILES_MODIFIED: <number>
+TESTS_STATUS: PASSING | FAILING | NOT_RUN
+WORK_TYPE: IMPLEMENTATION | TESTING | DOCUMENTATION | DEBUGGING
+EXIT_SIGNAL: false | true
+RECOMMENDATION: <next action>
+---END_RALPH_STATUS---
 ```
 
-## Running the CLI (Manual)
+**EXIT_SIGNAL = true** when all `@fix_plan.md` items are `[x]` and validation passes.
 
-With venv (after running install script):
-```bash
-source .venv/bin/activate
-portadoc extract data/input/peter_lou_50dpi.pdf
-```
+### Good Ralph Tasks
 
-Without venv (fallback):
-```bash
-PYTHONPATH=src python3 -m portadoc.cli extract data/input/peter_lou_50dpi.pdf
-```
+- **Atomic**: Completable in 1-3 loops
+- **Measurable**: Has validation command with pass/fail
+- **Specific**: Names exact files and changes
+- **Testable**: No human judgment needed
 
-## Evaluation Command
+Bad: "Improve performance" / Good: "Add caching to `get_words()` in `src/api.py`, validation: `pytest -k cache`"
+
+### Running Ralph
 
 ```bash
-source .venv/bin/activate
-portadoc eval data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv
+~/.ralph/ralph_loop.sh    # Start loop
+~/.ralph/ralph_monitor.sh # Monitor progress
 ```
 
-## Directories
+---
 
-- `src/portadoc/` - Main source code
-- `data/input/` - Test PDFs and ground truth CSVs
-- `tmp/` - Temporary scripts and working files (not committed)
-- `logs/` - Ralph loop logs
+## GUI Testing with dev-browser
 
-## tmp/ Directory
+For UI work, use the **dev-browser** skill for visual verification:
 
-The `tmp/` directory is for temporary scripts, scratch files, and one-off utilities.
-- `tmp/install_ocr_deps.sh` - Installs OCR dependencies (PaddleOCR, docTR, etc.)
+```
+Use dev-browser to:
+1. Navigate to http://localhost:8000
+2. Take screenshot
+3. Verify expected behavior
+```
 
-## Key Files for OCR Pipeline
+Screenshots go in `screenshots/` for documentation.
 
-- `src/portadoc/extractor.py` - Main extraction pipeline
-- `src/portadoc/preprocess.py` - OpenCV preprocessing (grayscale, denoise, CLAHE, sharpen, binarize)
-- `src/portadoc/ocr/tesseract.py` - Tesseract wrapper
-- `src/portadoc/ocr/easyocr.py` - EasyOCR wrapper
-- `src/portadoc/harmonize.py` - Multi-engine result fusion
-- `src/portadoc/metrics.py` - Evaluation metrics
+---
 
-## Current Best Configs
+## Quick Reference
 
-### For bbox accuracy (redaction):
+### Run Stuff
 ```bash
-portadoc extract --no-easyocr --preprocess none --psm 6 <pdf>
-# Or: make extract-smart PDF=<pdf>
+./portadoc --help            # CLI help (no venv activation needed)
+make help                    # See all Makefile commands
+make check                   # Verify OCR engines
+make serve                   # Web UI at localhost:8000
 ```
-- Clean PDFs: **99.00% F1**, 98.74% text match
-- Degraded (50dpi): **81.55% F1**, 40.35% text match
 
-### For text accuracy (OCR extraction):
+### CLI Commands
+
 ```bash
-portadoc extract --use-paddleocr --use-doctr --preprocess none --psm 6 <pdf>
-# Or: make extract-all PDF=<pdf>
+# Extract words from PDF
+./portadoc extract input.pdf                       # All engines (default)
+./portadoc extract input.pdf -o output.csv         # Save to file
+./portadoc extract input.pdf --primary surya       # Use Surya as primary
+./portadoc extract input.pdf --no-surya            # Disable Surya
+
+# Evaluate against ground truth
+./portadoc eval input.pdf ground_truth.csv
+./portadoc eval input.pdf gt.csv -v                # Verbose mode
+
+# Check OCR availability
+./portadoc check
+
+# Web UI
+./portadoc serve                                    # http://localhost:8000
+./portadoc serve --reload                           # Dev mode with auto-reload
 ```
-- Clean PDFs: 90.29% F1, 98.25% text match
-- Degraded (50dpi): 73.10% F1, **68.75% text match**
 
-## Key CLI Flags
+### Key Flags (extract & eval)
 
-- `--no-easyocr` - Disable EasyOCR (better bbox precision)
-- `--use-paddleocr` - Enable PaddleOCR (adds text accuracy)
-- `--use-doctr` - Enable docTR (best text accuracy)
-- `--preprocess none` - Skip preprocessing (optimal for already-degraded images)
-- `--psm 6` - Tesseract uniform block mode (best for document text)
-- `--config PATH` - Custom YAML config for harmonization thresholds
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--primary ENGINE` | tesseract | Primary engine for bbox authority (tesseract/surya/doctr/easyocr/paddleocr) |
+| `--no-surya` | enabled | Disable Surya OCR |
+| `--no-easyocr` | enabled | Disable EasyOCR |
+| `--no-doctr` | enabled | Disable docTR |
+| `--no-paddleocr` | disabled | Disable PaddleOCR |
+| `--preprocess LEVEL` | auto | none/light/standard/aggressive/auto |
+| `--psm N` | 3 | Tesseract page segmentation mode (0-13) |
+| `--upscale N` | none | Super-resolution (2 or 4) |
+| `--config PATH` | config/harmonize.yaml | Custom config file |
+| `-o PATH` | stdout | Output file path |
+| `--format FORMAT` | csv | Output format (csv/json) |
+| `--progress` | off | Show progress bar |
 
-## Performance Notes
+### Config-Driven Primary Engine
 
-- **Trade-off**: More engines = better text accuracy but lower bbox precision
-- Tesseract-only: Best F1 (fewest false positives)
-- All 4 engines: Best text match (68.75% vs 40.35% on degraded docs)
-- 50 DPI degraded PDFs: 81.55% F1 is the ceiling with Tesseract-only
-- Clean PDFs: 99.00% F1 achievable with Tesseract-only
+Set in `config/harmonize.yaml`:
+```yaml
+harmonize:
+  primary:
+    engine: tesseract  # or surya, doctr
+    weight: 1.0
+```
 
-## OCR Engine Availability
+CLI `--primary` overrides config.
 
-All 4 engines enabled in `config/harmonize.yaml`:
-- Tesseract (primary) - always used
-- EasyOCR - enabled by default
-- PaddleOCR - enabled, use `--use-paddleocr`
-- docTR - enabled, use `--use-doctr`
+---
 
-Check with: `make check`
+## Architecture
 
-## Ralph Loop Instructions
+```
+src/portadoc/
+├── cli.py              # CLI commands (click)
+├── extractor.py        # Main extraction pipeline
+├── harmonize.py        # Multi-engine result fusion
+├── config.py           # YAML config loader
+├── models.py           # Data classes (Word, BBox, etc.)
+├── metrics.py          # F1, precision, recall
+├── preprocess.py       # OpenCV image enhancement
+├── detection.py        # Pixel fallback detection
+├── pdf.py              # PyMuPDF PDF handling
+├── api.py              # FastAPI REST endpoints
+├── ocr/
+│   ├── tesseract.py    # Default primary (word-level)
+│   ├── surya_ocr.py    # SOTA accuracy (word-level, polygon)
+│   ├── doctr_ocr.py    # High accuracy (word-level)
+│   ├── easyocr.py      # Degraded docs (line-level)
+│   └── paddleocr.py    # General (word-level)
+└── web/
+    ├── app.py          # Web UI routes
+    └── static/         # Frontend (JS, CSS, HTML)
 
-**IMPORTANT: Always maintain the Makefile when making changes.**
+config/harmonize.yaml   # OCR and harmonization settings
+data/input/             # Test PDFs and ground truth
+```
 
-When adding new CLI commands, features, or changing existing functionality:
+### Extraction Pipeline
+```
+PDF → Image → [Preprocess] → [Super-res] → Multi-OCR → Harmonize → Output
+```
 
-1. **Update the Makefile** (`Makefile` in project root) to reflect the changes
-2. Add new targets for any new CLI commands or common workflows
-3. Update existing targets if command signatures change
-4. Follow the existing pattern with `##` comments for the help system
-5. Test with `make help` to verify the help output is correct
+1. **PDF to Image**: PyMuPDF renders pages
+2. **Preprocess**: Optional OpenCV enhancement
+3. **Multi-OCR**: Run enabled engines (Tesseract primary)
+4. **Harmonize**: Smart bbox matching, text voting, deduplication
+5. **Output**: CSV with word_id, text, bbox, status, source
 
-Example Makefile target format:
+### Engine Characteristics
+| Engine | BBox Type | Best For | Notes |
+|--------|-----------|----------|-------|
+| **Tesseract** | word-level | Default primary, best F1 | Reliable bbox precision |
+| **Surya** | word-level (polygon) | SOTA text accuracy | Polygon→axis-aligned conversion |
+| **docTR** | word-level | High text accuracy | Good secondary |
+| **EasyOCR** | line-level | Degraded docs | Needs word decomposition |
+| **PaddleOCR** | word-level | General | Has ~10px bbox offset |
+
+---
+
+## Test Data
+
+- `data/input/peter_lou.pdf` - Clean 3-page test PDF
+- `data/input/peter_lou_50dpi.pdf` - Degraded version
+- `data/input/peter_lou_words_slim.csv` - Ground truth (401 words)
+
+## Current Performance
+
+| Config | Clean F1 | Degraded F1 | Notes |
+|--------|----------|-------------|-------|
+| Tesseract-only | 99.00% | 81.55% | Best bbox precision |
+| All 4 engines | 95.92% | 74.11% | Better text accuracy |
+
+---
+
+## Dev Guidelines
+
+### Always
+- Activate venv before Python: `source .venv/bin/activate`
+- Update Makefile when adding CLI commands
+- Test on both clean and degraded PDFs
+- Keep changes minimal and focused
+
+### Never
+- Commit to main without testing
+- Add GPU/CUDA dependencies (CPU-only)
+- Over-engineer or add unnecessary features
+
+### Makefile Convention
 ```makefile
-##@ Category Name
+##@ Category
 
-target-name: ## Description of what this target does
-	$(PORTADOC) command --flags $(VARIABLES)
+target: ## Description
+	$(PORTADOC) command --flags
 ```
 
-**OpenCV Note**: This project requires `opencv-contrib-python` (not `opencv-python`) for super-resolution support. The install target handles this automatically.
+---
+
+## Files at a Glance
+
+| File | Purpose |
+|------|---------|
+| `CLAUDE.md` | This file - agent springboard |
+| `Makefile` | All commands, single source of truth |
+| `config/harmonize.yaml` | OCR settings and thresholds |
+| `specs/portadoc.md` | Full specification |
+| `docs/tickets/` | Active work tickets |
+| `docs/tickets/TEMPLATE_RALPH.md` | How to set up Ralph tickets |

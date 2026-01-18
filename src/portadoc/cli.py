@@ -77,9 +77,9 @@ def main():
     help="EasyOCR text detection threshold 0.0-1.0 (default: 0.7)"
 )
 @click.option(
-    "--use-paddleocr",
+    "--no-paddleocr",
     is_flag=True,
-    help="Enable PaddleOCR engine (best for degraded documents)"
+    help="Disable PaddleOCR engine"
 )
 @click.option(
     "--no-tesseract",
@@ -104,14 +104,35 @@ def main():
     help="Super-resolution method (default: espcn)"
 )
 @click.option(
-    "--use-doctr",
+    "--no-doctr",
     is_flag=True,
-    help="Enable docTR engine"
+    help="Disable docTR engine"
+)
+@click.option(
+    "--no-surya",
+    is_flag=True,
+    help="Disable Surya OCR engine (word-level, SOTA accuracy)"
 )
 @click.option(
     "--config",
     type=click.Path(exists=True, path_type=Path),
     help="Path to config file (YAML) for harmonization thresholds"
+)
+@click.option(
+    "--primary",
+    type=click.Choice(["tesseract", "surya", "doctr", "easyocr", "paddleocr"]),
+    default=None,
+    help="Primary OCR engine for bbox authority (default: from config, usually tesseract)"
+)
+@click.option(
+    "--no-reading-order",
+    is_flag=True,
+    help="Disable geometric reading order (use simple y,x coordinate sorting)"
+)
+@click.option(
+    "--align/--no-align",
+    default=True,
+    help="Auto-detect and correct page orientation (default: enabled)"
 )
 def extract(
     pdf_path: Path,
@@ -125,21 +146,25 @@ def extract(
     oem: int,
     easyocr_decoder: str,
     easyocr_text_threshold: float,
-    use_paddleocr: bool,
+    no_paddleocr: bool,
     no_tesseract: bool,
     no_easyocr: bool,
     upscale: str,
     upscale_method: str,
-    use_doctr: bool,
+    no_doctr: bool,
+    no_surya: bool,
     config: Path | None,
+    primary: str | None,
+    no_reading_order: bool,
+    align: bool,
 ):
     """
     Extract words and bounding boxes from a PDF.
 
     PDF_PATH is the path to the input PDF file.
 
-    Uses smart harmonization with Tesseract as primary engine and optional
-    secondary engines (EasyOCR, PaddleOCR, docTR) for text voting.
+    Uses smart harmonization with configurable primary engine and
+    secondary engines (EasyOCR, PaddleOCR, docTR, Surya) for text voting.
     """
     try:
         # Set up progress callback if requested
@@ -178,12 +203,16 @@ def extract(
                 tesseract_oem=oem,
                 easyocr_decoder=easyocr_decoder,
                 easyocr_text_threshold=easyocr_text_threshold,
-                use_paddleocr=use_paddleocr,
+                use_paddleocr=not no_paddleocr,
                 use_tesseract=not no_tesseract,
                 use_easyocr=not no_easyocr,
-                use_doctr=use_doctr,
+                use_doctr=not no_doctr,
+                use_surya=not no_surya,
                 config_path=config,
                 progress_callback=progress_callback if progress else None,
+                use_reading_order=not no_reading_order,
+                primary_engine=primary,
+                align_pages=align,
             )
 
             if progress_bar:
@@ -210,12 +239,16 @@ def extract(
                 tesseract_oem=oem,
                 easyocr_decoder=easyocr_decoder,
                 easyocr_text_threshold=easyocr_text_threshold,
-                use_paddleocr=use_paddleocr,
+                use_paddleocr=not no_paddleocr,
                 use_tesseract=not no_tesseract,
                 use_easyocr=not no_easyocr,
-                use_doctr=use_doctr,
+                use_doctr=not no_doctr,
+                use_surya=not no_surya,
                 config_path=config,
                 progress_callback=progress_callback if progress else None,
+                use_reading_order=not no_reading_order,
+                primary_engine=primary,
+                align_pages=align,
             )
 
             if progress_bar:
@@ -242,6 +275,7 @@ def check():
     from .ocr.easyocr import is_easyocr_available, get_easyocr_version
     from .ocr.paddleocr import is_paddleocr_available, get_paddleocr_version
     from .ocr.doctr_ocr import is_doctr_available, get_doctr_version
+    from .ocr.surya_ocr import is_surya_available, get_surya_version
 
     click.echo("OCR Engine Status:")
     click.echo("-" * 40)
@@ -273,6 +307,13 @@ def check():
     else:
         click.echo("docTR:      NOT FOUND")
         click.echo("  Install with: pip install python-doctr[torch]")
+
+    if is_surya_available():
+        version = get_surya_version()
+        click.echo(f"Surya:      OK (version {version})")
+    else:
+        click.echo("Surya:      NOT FOUND")
+        click.echo("  Install with: pip install surya-ocr")
 
 
 @main.command("eval")
@@ -326,9 +367,9 @@ def check():
     help="EasyOCR text detection threshold 0.0-1.0 (default: 0.7)"
 )
 @click.option(
-    "--use-paddleocr",
+    "--no-paddleocr",
     is_flag=True,
-    help="Enable PaddleOCR engine (best for degraded documents)"
+    help="Disable PaddleOCR engine"
 )
 @click.option(
     "--no-tesseract",
@@ -353,14 +394,24 @@ def check():
     help="Super-resolution method (default: espcn)"
 )
 @click.option(
-    "--use-doctr",
+    "--no-doctr",
     is_flag=True,
-    help="Enable docTR engine"
+    help="Disable docTR engine"
+)
+@click.option(
+    "--no-surya",
+    is_flag=True,
+    help="Disable Surya OCR engine (word-level, SOTA accuracy)"
 )
 @click.option(
     "--config",
     type=click.Path(exists=True, path_type=Path),
     help="Path to config file (YAML) for harmonization thresholds"
+)
+@click.option(
+    "--align/--no-align",
+    default=True,
+    help="Auto-detect and correct page orientation (default: enabled)"
 )
 def evaluate_cmd(
     pdf_path: Path,
@@ -373,13 +424,15 @@ def evaluate_cmd(
     oem: int,
     easyocr_decoder: str,
     easyocr_text_threshold: float,
-    use_paddleocr: bool,
+    no_paddleocr: bool,
     no_tesseract: bool,
     no_easyocr: bool,
     upscale: str,
     upscale_method: str,
-    use_doctr: bool,
+    no_doctr: bool,
+    no_surya: bool,
     config: Path | None,
+    align: bool,
 ):
     """
     Evaluate extraction against ground truth CSV.
@@ -403,11 +456,13 @@ def evaluate_cmd(
             tesseract_oem=oem,
             easyocr_decoder=easyocr_decoder,
             easyocr_text_threshold=easyocr_text_threshold,
-            use_paddleocr=use_paddleocr,
+            use_paddleocr=not no_paddleocr,
             use_tesseract=not no_tesseract,
             use_easyocr=not no_easyocr,
-            use_doctr=use_doctr,
+            use_doctr=not no_doctr,
+            use_surya=not no_surya,
             config_path=config,
+            align_pages=align,
         )
 
         # Evaluate

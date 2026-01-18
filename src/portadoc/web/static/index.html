@@ -14,7 +14,13 @@
             <select id="pdf-select">
                 <option value="">Select PDF...</option>
             </select>
+            <span class="or-separator">or</span>
+            <label class="file-upload-btn">
+                <input type="file" id="pdf-upload" accept=".pdf" hidden>
+                Upload PDF
+            </label>
             <button id="extract-btn" disabled>Extract</button>
+            <button id="file-info-btn" class="icon-btn hidden" title="View extraction info">ℹ</button>
             <button id="toggle-config-btn">Config</button>
         </div>
     </header>
@@ -24,10 +30,23 @@
         <aside id="config-panel" class="hidden">
             <h3>Extraction Settings</h3>
             <div class="config-group">
-                <label><input type="checkbox" id="cfg-tesseract" checked disabled> Tesseract (always on)</label>
+                <label>Primary Engine:
+                    <select id="cfg-primary">
+                        <option value="">Config Default</option>
+                        <option value="tesseract" selected>Tesseract</option>
+                        <option value="surya">Surya</option>
+                        <option value="doctr">docTR</option>
+                        <option value="easyocr">EasyOCR</option>
+                        <option value="paddleocr">PaddleOCR</option>
+                    </select>
+                </label>
+            </div>
+            <div class="config-group">
+                <label><input type="checkbox" id="cfg-tesseract" checked> Tesseract</label>
                 <label><input type="checkbox" id="cfg-easyocr" checked> EasyOCR</label>
-                <label><input type="checkbox" id="cfg-paddleocr"> PaddleOCR</label>
-                <label><input type="checkbox" id="cfg-doctr"> docTR</label>
+                <label><input type="checkbox" id="cfg-paddleocr" checked> PaddleOCR</label>
+                <label><input type="checkbox" id="cfg-doctr" checked> docTR</label>
+                <label><input type="checkbox" id="cfg-surya" checked> Surya</label>
             </div>
             <div class="config-group">
                 <label>Preprocess:
@@ -48,47 +67,82 @@
 
         <!-- PDF Viewer -->
         <section id="pdf-viewer">
-            <div id="pdf-container">
-                <canvas id="pdf-canvas"></canvas>
-                <canvas id="bbox-canvas"></canvas>
-            </div>
             <div class="page-controls">
                 <button id="prev-page" disabled>&lt; Prev</button>
                 <span id="page-info">Page 0 / 0</span>
                 <button id="next-page" disabled>Next &gt;</button>
             </div>
-        </section>
-
-        <!-- Word List -->
-        <section id="word-list">
-            <div class="list-header">
-                <h3>Words <span id="word-count">(0)</span></h3>
-                <div class="filter-controls">
-                    <label>Filter:
-                        <select id="status-filter">
-                            <option value="">All</option>
-                            <option value="word">word</option>
-                            <option value="low_conf">low_conf</option>
-                            <option value="secondary_only">secondary_only</option>
-                            <option value="pixel">pixel</option>
-                        </select>
-                    </label>
+            <div id="pdf-container">
+                <div class="canvas-container">
+                    <canvas id="pdf-canvas"></canvas>
+                    <canvas id="bbox-canvas"></canvas>
+                    <div id="word-tooltip" class="hidden"></div>
                 </div>
             </div>
-            <div class="stats" id="stats"></div>
-            <table id="words-table">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Text</th>
-                        <th>Source</th>
-                        <th>Status</th>
-                        <th>Conf</th>
-                    </tr>
-                </thead>
-                <tbody id="words-tbody">
-                </tbody>
-            </table>
+        </section>
+
+        <!-- Resizable Divider -->
+        <div id="panel-resizer"></div>
+
+        <!-- Word List (split into Words Table + Reading Order) -->
+        <section id="word-list">
+            <!-- Top Panel: Words Table -->
+            <div id="words-panel">
+                <div class="panel-header">
+                    <h3>Extracted Words <span id="word-count">(0)</span></h3>
+                    <div class="filter-controls">
+                        <label>Status:
+                            <select id="status-filter">
+                                <option value="">All</option>
+                                <option value="word">word</option>
+                                <option value="low_conf">low_conf</option>
+                                <option value="secondary_only">secondary_only</option>
+                                <option value="pixel">pixel</option>
+                            </select>
+                        </label>
+                        <label>Source:
+                            <select id="source-filter">
+                                <option value="">All</option>
+                                <option value="T">T (Tesseract)</option>
+                                <option value="E">E (EasyOCR)</option>
+                                <option value="P">P (PaddleOCR)</option>
+                                <option value="D">D (docTR)</option>
+                                <option value="S">S (Surya)</option>
+                                <option value="X">X (Pixel)</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+                <div class="stats" id="stats"></div>
+                <div class="table-wrapper">
+                    <table id="words-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Text</th>
+                                <th>Source</th>
+                                <th>Status</th>
+                                <th>Conf</th>
+                            </tr>
+                        </thead>
+                        <tbody id="words-tbody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Horizontal Resizer -->
+            <div id="horizontal-resizer"></div>
+
+            <!-- Bottom Panel: Reading Order -->
+            <div id="reading-order-panel">
+                <div class="panel-header">
+                    <h3>Reading Order <span id="line-count">(0 lines)</span></h3>
+                </div>
+                <div id="reading-order-content">
+                    <p class="empty-state">Load a PDF with extraction to see reading order.</p>
+                </div>
+            </div>
         </section>
     </main>
 
@@ -98,6 +152,37 @@
             <h4>Word Details</h4>
             <div id="details-body"></div>
             <button id="close-details">Close</button>
+        </div>
+    </div>
+
+    <!-- File Info Modal -->
+    <div id="file-info-modal" class="modal hidden">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h4>Extraction Info</h4>
+                <button id="close-file-info" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="info-row">
+                    <label>PDF:</label>
+                    <span id="info-pdf-path">-</span>
+                </div>
+                <div class="info-row">
+                    <label>CSV Output:</label>
+                    <span id="info-csv-path">-</span>
+                </div>
+                <div class="info-row">
+                    <label>Words Extracted:</label>
+                    <span id="info-word-count">-</span>
+                </div>
+                <h5>CSV Preview</h5>
+                <div id="csv-preview-container">
+                    <table id="csv-preview-table">
+                        <thead id="csv-preview-head"></thead>
+                        <tbody id="csv-preview-body"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 

@@ -12,7 +12,8 @@ import numpy as np
 _MODEL_DIR = Path(__file__).parent.parent.parent / "models"
 
 # Cached super-resolution instances
-_sr_cache: dict[tuple[str, int], cv2.dnn_superres.DnnSuperResImpl] = {}
+# Note: Type annotation uses Any because DnnSuperResImpl may not be available in all cv2 builds
+_sr_cache: dict[tuple[str, int], "cv2.dnn_superres.DnnSuperResImpl"] = {}
 
 
 def _get_model_path(model_name: str, scale: int) -> Path:
@@ -29,7 +30,7 @@ def _get_model_path(model_name: str, scale: int) -> Path:
     return model_path
 
 
-def _get_sr_instance(method: str, scale: int) -> cv2.dnn_superres.DnnSuperResImpl:
+def _get_sr_instance(method: str, scale: int) -> "cv2.dnn_superres.DnnSuperResImpl":
     """Get or create a cached super-resolution instance."""
     cache_key = (method, scale)
 

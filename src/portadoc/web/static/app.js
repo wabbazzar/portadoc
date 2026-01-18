@@ -10,8 +10,11 @@ const state = {
     totalPages: 0,
     scale: 1.5,
     words: [],
+    readingOrderLines: [],
     currentPdfPath: null,
     highlightedWordId: null,
+    lastExtractionInfo: null, // { pdfPath, csvPath, wordCount }
+    pageRotations: {}, // Page rotation angles from extraction (0, 90, 180, 270)
 };
 
 // Status colors for bounding boxes
@@ -31,10 +34,11 @@ const STATUS_BORDERS = {
 
 // DOM elements
 let pdfCanvas, bboxCanvas, pdfCtx, bboxCtx;
-let pdfSelect, extractBtn, wordsTable, wordsTbody;
+let pdfSelect, pdfUpload, extractBtn, wordsTable, wordsTbody;
 let pageInfo, prevPageBtn, nextPageBtn;
 let configPanel, toggleConfigBtn;
-let statusFilter;
+let statusFilter, sourceFilter, wordTooltip;
+let readingOrderContent, lineCount;
 
 // Initialize PDF.js
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -49,6 +53,7 @@ async function init() {
     bboxCtx = bboxCanvas.getContext('2d');
 
     pdfSelect = document.getElementById('pdf-select');
+    pdfUpload = document.getElementById('pdf-upload');
     extractBtn = document.getElementById('extract-btn');
     wordsTable = document.getElementById('words-table');
     wordsTbody = document.getElementById('words-tbody');
@@ -60,9 +65,12 @@ async function init() {
     configPanel = document.getElementById('config-panel');
     toggleConfigBtn = document.getElementById('toggle-config-btn');
     statusFilter = document.getElementById('status-filter');
+    sourceFilter = document.getElementById('source-filter');
+    wordTooltip = document.getElementById('word-tooltip');
 
     // Event listeners
     pdfSelect.addEventListener('change', onPdfSelect);
+    pdfUpload.addEventListener('change', onPdfUpload);
     extractBtn.addEventListener('click', onExtract);
     prevPageBtn.addEventListener('click', () => changePage(-1));
     nextPageBtn.addEventListener('click', () => changePage(1));
@@ -71,14 +79,40 @@ async function init() {
         renderWordList();
         renderBboxes();
     });
+    sourceFilter.addEventListener('change', () => {
+        renderWordList();
+        renderBboxes();
+    });
     document.getElementById('apply-extract-btn').addEventListener('click', onExtract);
     document.getElementById('close-details').addEventListener('click', closeDetails);
+
+    // File info modal
+    document.getElementById('file-info-btn').addEventListener('click', showFileInfoModal);
+    document.getElementById('close-file-info').addEventListener('click', () => {
+        document.getElementById('file-info-modal').classList.add('hidden');
+    });
+    document.getElementById('file-info-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'file-info-modal') {
+            document.getElementById('file-info-modal').classList.add('hidden');
+        }
+    });
 
     // Bbox canvas mouse events for hover
     bboxCanvas.style.pointerEvents = 'auto';
     bboxCanvas.addEventListener('mousemove', onCanvasMouseMove);
     bboxCanvas.addEventListener('click', onCanvasClick);
-    bboxCanvas.addEventListener('mouseleave', () => highlightWord(null));
+    bboxCanvas.addEventListener('mouseleave', () => {
+        highlightWord(null);
+        hideTooltip();
+    });
+
+    // Initialize panel resizers
+    initPanelResizer();
+    initHorizontalResizer();
+
+    // Get reading order elements
+    readingOrderContent = document.getElementById('reading-order-content');
+    lineCount = document.getElementById('line-count');
 
     // Load PDF list
     await loadPdfList();
@@ -105,6 +139,9 @@ async function onPdfSelect() {
     const pdfPath = pdfSelect.value;
     if (!pdfPath) return;
 
+    // Clear file input when selecting from dropdown
+    pdfUpload.value = '';
+
     state.currentPdfPath = pdfPath;
     extractBtn.disabled = false;
 
@@ -113,6 +150,52 @@ async function onPdfSelect() {
 
     // Load words if extraction exists
     await loadWords(pdfPath);
+}
+
+async function onPdfUpload() {
+    const file = pdfUpload.files[0];
+    if (!file) return;
+
+    // Clear dropdown selection
+    pdfSelect.value = '';
+
+    // Show upload progress
+    extractBtn.disabled = true;
+    extractBtn.textContent = 'Uploading...';
+
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            state.currentPdfPath = data.path;
+            extractBtn.disabled = false;
+            extractBtn.textContent = 'Extract';
+
+            // Load the uploaded PDF
+            await loadPdf(data.path);
+
+            // Check for existing extraction
+            await loadWords(data.path);
+
+            // Refresh PDF list to show the uploaded file
+            await loadPdfList();
+        } else {
+            alert('Upload failed: ' + (data.detail || 'Unknown error'));
+            extractBtn.textContent = 'Extract';
+        }
+    } catch (error) {
+        console.error('Upload failed:', error);
+        alert('Upload failed: ' + error.message);
+        extractBtn.textContent = 'Extract';
+    }
 }
 
 async function loadPdf(pdfPath) {
@@ -135,8 +218,9 @@ async function loadWords(pdfPath) {
         const data = await response.json();
 
         state.words = data.words || [];
+        state.pageRotations = data.page_rotations || {};
+        renderPage(state.currentPage);
         renderWordList();
-        renderBboxes();
 
         // Update stats
         const statsDiv = document.getElementById('stats');
@@ -149,8 +233,11 @@ async function loadWords(pdfPath) {
                 <span class="status-low_conf">low_conf: ${statusCounts.low_conf || 0}</span> |
                 <span class="status-secondary_only">secondary: ${statusCounts.secondary_only || 0}</span>
             `;
+            // Also load reading order
+            await loadReadingOrder(pdfPath);
         } else {
             statsDiv.innerHTML = '<em>No extraction found. Click Extract to run.</em>';
+            renderReadingOrderEmpty();
         }
 
         document.getElementById('word-count').textContent = `(${state.words.length})`;
@@ -159,11 +246,91 @@ async function loadWords(pdfPath) {
     }
 }
 
+async function loadReadingOrder(pdfPath) {
+    try {
+        const page = state.currentPage - 1; // API uses 0-indexed pages
+        const response = await fetch(`/api/reading-order/${encodeURIComponent(pdfPath)}?page=${page}`);
+        const data = await response.json();
+
+        state.readingOrderLines = data.lines || [];
+        renderReadingOrder();
+
+        if (lineCount) {
+            lineCount.textContent = `(${data.total_lines || 0} lines)`;
+        }
+    } catch (error) {
+        console.error('Failed to load reading order:', error);
+        renderReadingOrderEmpty();
+    }
+}
+
+function renderReadingOrderEmpty() {
+    if (readingOrderContent) {
+        readingOrderContent.innerHTML = '<p class="empty-state">Load a PDF with extraction to see reading order.</p>';
+    }
+    if (lineCount) {
+        lineCount.textContent = '(0 lines)';
+    }
+    state.readingOrderLines = [];
+}
+
+function renderReadingOrder() {
+    if (!readingOrderContent) return;
+
+    if (state.readingOrderLines.length === 0) {
+        renderReadingOrderEmpty();
+        return;
+    }
+
+    let html = '';
+    for (const line of state.readingOrderLines) {
+        // Build line with clickable words
+        let lineHtml = `<div class="reading-line" data-line-id="${line.line_id}" data-word-ids="${line.word_ids.join(',')}">`;
+
+        for (let i = 0; i < line.words.length; i++) {
+            const word = line.words[i];
+            lineHtml += `<span class="reading-word status-${word.status}" data-word-id="${word.word_id}">${escapeHtml(word.text)}</span>`;
+            if (i < line.words.length - 1) {
+                lineHtml += ' ';
+            }
+        }
+
+        lineHtml += '</div>';
+        html += lineHtml;
+    }
+
+    readingOrderContent.innerHTML = html;
+
+    // Add event listeners to words
+    readingOrderContent.querySelectorAll('.reading-word').forEach(el => {
+        el.addEventListener('mouseenter', () => {
+            const wordId = parseInt(el.dataset.wordId);
+            highlightWord(wordId);
+        });
+        el.addEventListener('mouseleave', () => {
+            highlightWord(null);
+        });
+        el.addEventListener('click', () => {
+            const wordId = parseInt(el.dataset.wordId);
+            const word = state.words.find(w => w.word_id === wordId);
+            if (word) {
+                showWordDetails(word);
+            }
+        });
+    });
+}
+
 async function renderPage(pageNum) {
     if (!state.pdfDoc) return;
 
     const page = await state.pdfDoc.getPage(pageNum);
-    const viewport = page.getViewport({ scale: state.scale });
+
+    // Get rotation for this page (API uses 0-indexed pages)
+    const pageIndex = pageNum - 1;
+    const rotation = state.pageRotations[pageIndex] || 0;
+
+    // Apply rotation to viewport so PDF display matches rotated bboxes
+    const viewport = page.getViewport({ scale: state.scale, rotation: rotation });
 
     // Set canvas dimensions
     pdfCanvas.width = viewport.width;
@@ -171,10 +338,7 @@ async function renderPage(pageNum) {
     bboxCanvas.width = viewport.width;
     bboxCanvas.height = viewport.height;
 
-    // Position bbox canvas over pdf canvas
-    const container = document.getElementById('pdf-container');
-    bboxCanvas.style.left = pdfCanvas.offsetLeft + 'px';
-    bboxCanvas.style.top = pdfCanvas.offsetTop + 'px';
+    // bbox canvas is now positioned via CSS (absolute, top: 0, left: 0)
 
     // Render PDF page
     const renderContext = {
@@ -193,10 +357,12 @@ function renderBboxes() {
 
     // Get page dimensions from PDF (assuming 72 DPI base)
     const scale = state.scale;
-    const filterValue = statusFilter ? statusFilter.value : '';
+    const statusFilterValue = statusFilter ? statusFilter.value : '';
+    const sourceFilterValue = sourceFilter ? sourceFilter.value : '';
     const pageWords = state.words.filter(w =>
         w.page === state.currentPage - 1 &&
-        (!filterValue || w.status === filterValue)
+        (!statusFilterValue || w.status === statusFilterValue) &&
+        (!sourceFilterValue || (w.source && w.source.includes(sourceFilterValue)))
     );
 
     for (const word of pageWords) {
@@ -223,10 +389,12 @@ function renderBboxes() {
 }
 
 function renderWordList() {
-    const filterValue = statusFilter.value;
+    const statusFilterValue = statusFilter.value;
+    const sourceFilterValue = sourceFilter.value;
     const pageWords = state.words.filter(w =>
         w.page === state.currentPage - 1 &&
-        (!filterValue || w.status === filterValue)
+        (!statusFilterValue || w.status === statusFilterValue) &&
+        (!sourceFilterValue || (w.source && w.source.includes(sourceFilterValue)))
     );
 
     wordsTbody.innerHTML = '';
@@ -262,6 +430,17 @@ function highlightWord(wordId) {
     document.querySelectorAll('#words-tbody tr').forEach(tr => {
         tr.classList.toggle('highlighted', tr.dataset.wordId == wordId);
     });
+
+    // Highlight reading order word
+    document.querySelectorAll('.reading-word').forEach(el => {
+        el.classList.toggle('highlighted', parseInt(el.dataset.wordId) === wordId);
+    });
+
+    // Highlight entire line if word is part of it
+    document.querySelectorAll('.reading-line').forEach(el => {
+        const lineWordIds = el.dataset.wordIds.split(',').map(id => parseInt(id));
+        el.classList.toggle('highlighted', lineWordIds.includes(wordId));
+    });
 }
 
 function onCanvasMouseMove(event) {
@@ -274,13 +453,26 @@ function onCanvasMouseMove(event) {
     for (const word of pageWords) {
         if (x >= word.x0 && x <= word.x1 && y >= word.y0 && y <= word.y1) {
             highlightWord(word.word_id);
+            showTooltip(word.text, event.clientX - rect.left, event.clientY - rect.top);
             bboxCanvas.style.cursor = 'pointer';
             return;
         }
     }
 
     highlightWord(null);
+    hideTooltip();
     bboxCanvas.style.cursor = 'default';
+}
+
+function showTooltip(text, x, y) {
+    wordTooltip.textContent = text;
+    wordTooltip.style.left = (x + 10) + 'px';
+    wordTooltip.style.top = (y - 30) + 'px';
+    wordTooltip.classList.remove('hidden');
+}
+
+function hideTooltip() {
+    wordTooltip.classList.add('hidden');
 }
 
 function onCanvasClick(event) {
@@ -304,6 +496,7 @@ const SOURCE_NAMES = {
     'E': 'EasyOCR',
     'D': 'docTR',
     'P': 'PaddleOCR',
+    'S': 'Surya',
     'PX': 'Pixel Detection',
     'X': 'Pixel Detection',  // Legacy
 };
@@ -333,6 +526,7 @@ function showWordDetails(word) {
         <p><strong>EasyOCR:</strong> ${escapeHtml(word.easy_text || '-')}</p>
         <p><strong>docTR:</strong> ${escapeHtml(word.doctr_text || '-')}</p>
         <p><strong>PaddleOCR:</strong> ${escapeHtml(word.paddle_text || '-')}</p>
+        <p><strong>Surya:</strong> ${escapeHtml(word.surya_text || '-')}</p>
     `;
 
     document.getElementById('word-details').classList.remove('hidden');
@@ -349,16 +543,20 @@ async function onExtract() {
     extractBtn.textContent = 'Extracting...';
     document.body.classList.add('loading');
 
+    const primaryEngine = document.getElementById('cfg-primary')?.value || null;
     const request = {
         pdf_path: state.currentPdfPath,
-        use_tesseract: true,
-        use_easyocr: document.getElementById('cfg-easyocr').checked,
-        use_paddleocr: document.getElementById('cfg-paddleocr').checked,
-        use_doctr: document.getElementById('cfg-doctr').checked,
-        preprocess: document.getElementById('cfg-preprocess').value,
-        psm: parseInt(document.getElementById('cfg-psm').value),
-        oem: parseInt(document.getElementById('cfg-oem').value),
+        use_tesseract: document.getElementById('cfg-tesseract')?.checked ?? true,
+        use_easyocr: document.getElementById('cfg-easyocr')?.checked ?? true,
+        use_paddleocr: document.getElementById('cfg-paddleocr')?.checked ?? true,
+        use_doctr: document.getElementById('cfg-doctr')?.checked ?? true,
+        use_surya: document.getElementById('cfg-surya')?.checked ?? true,
+        preprocess: document.getElementById('cfg-preprocess')?.value ?? 'none',
+        psm: parseInt(document.getElementById('cfg-psm')?.value ?? '6'),
+        oem: parseInt(document.getElementById('cfg-oem')?.value ?? '3'),
+        primary_engine: primaryEngine,
     };
+    console.log('Extraction request:', request);
 
     try {
         const response = await fetch('/api/extract', {
@@ -371,9 +569,19 @@ async function onExtract() {
 
         if (data.success) {
             state.words = data.words || [];
+            // Store extraction info for the info modal
+            state.lastExtractionInfo = {
+                pdfPath: data.pdf_path || state.currentPdfPath,
+                csvPath: data.csv_path || 'Unknown',
+                wordCount: data.total_words || state.words.length,
+            };
+            // Show the info button
+            document.getElementById('file-info-btn').classList.remove('hidden');
+
             renderWordList();
             renderBboxes();
-            alert(`Extracted ${data.total_words} words`);
+            // Reload reading order after extraction
+            await loadReadingOrder(state.currentPdfPath);
         } else {
             alert('Extraction failed: ' + (data.detail || 'Unknown error'));
         }
@@ -387,13 +595,17 @@ async function onExtract() {
     }
 }
 
-function changePage(delta) {
+async function changePage(delta) {
     const newPage = state.currentPage + delta;
     if (newPage >= 1 && newPage <= state.totalPages) {
         state.currentPage = newPage;
         updatePageControls();
-        renderPage(state.currentPage);
+        await renderPage(state.currentPage);
         renderWordList();
+        // Reload reading order for new page
+        if (state.currentPdfPath && state.words.length > 0) {
+            await loadReadingOrder(state.currentPdfPath);
+        }
     }
 }
 
@@ -412,4 +624,178 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Panel resizing functionality
+function initPanelResizer() {
+    const resizer = document.getElementById('panel-resizer');
+    const wordList = document.getElementById('word-list');
+
+    if (!resizer || !wordList) return;
+
+    let isResizing = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    resizer.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        startX = e.clientX;
+        startWidth = wordList.offsetWidth;
+
+        resizer.classList.add('dragging');
+        document.body.classList.add('resizing');
+
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+
+        // Calculate new width (dragging left increases width, right decreases)
+        const deltaX = startX - e.clientX;
+        const newWidth = Math.min(Math.max(startWidth + deltaX, 280), 800);
+
+        wordList.style.width = newWidth + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isResizing) {
+            isResizing = false;
+            resizer.classList.remove('dragging');
+            document.body.classList.remove('resizing');
+        }
+    });
+}
+
+// Horizontal resizer for Words Panel / Reading Order split
+function initHorizontalResizer() {
+    const resizer = document.getElementById('horizontal-resizer');
+    const wordsPanel = document.getElementById('words-panel');
+    const readingPanel = document.getElementById('reading-order-panel');
+    const wordList = document.getElementById('word-list');
+
+    if (!resizer || !wordsPanel || !readingPanel || !wordList) return;
+
+    let isResizing = false;
+    let startY = 0;
+    let startWordsHeight = 0;
+    let startReadingHeight = 0;
+
+    resizer.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        startY = e.clientY;
+        startWordsHeight = wordsPanel.offsetHeight;
+        startReadingHeight = readingPanel.offsetHeight;
+
+        resizer.classList.add('dragging');
+        document.body.classList.add('resizing');
+        document.body.style.cursor = 'row-resize';
+
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+
+        const deltaY = e.clientY - startY;
+        const totalHeight = startWordsHeight + startReadingHeight;
+
+        // Calculate new heights with min constraints
+        let newWordsHeight = Math.max(100, startWordsHeight + deltaY);
+        let newReadingHeight = Math.max(100, startReadingHeight - deltaY);
+
+        // Ensure total stays the same
+        if (newWordsHeight + newReadingHeight > totalHeight) {
+            if (deltaY > 0) {
+                newReadingHeight = totalHeight - newWordsHeight;
+            } else {
+                newWordsHeight = totalHeight - newReadingHeight;
+            }
+        }
+
+        wordsPanel.style.flex = `0 0 ${newWordsHeight}px`;
+        readingPanel.style.flex = `0 0 ${newReadingHeight}px`;
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isResizing) {
+            isResizing = false;
+            resizer.classList.remove('dragging');
+            document.body.classList.remove('resizing');
+            document.body.style.cursor = '';
+        }
+    });
+}
+
+// Show file info modal with CSV preview
+function showFileInfoModal() {
+    const modal = document.getElementById('file-info-modal');
+    const info = state.lastExtractionInfo;
+
+    if (!info) {
+        alert('No extraction info available');
+        return;
+    }
+
+    // Populate info fields
+    document.getElementById('info-pdf-path').textContent = info.pdfPath;
+    document.getElementById('info-csv-path').textContent = info.csvPath;
+    document.getElementById('info-word-count').textContent = info.wordCount;
+
+    // Populate CSV preview from current words data
+    const thead = document.getElementById('csv-preview-head');
+    const tbody = document.getElementById('csv-preview-body');
+
+    // Clear previous content
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
+
+    if (state.words.length > 0) {
+        // Create header row
+        const headers = ['ID', 'Text', 'Source', 'Status', 'Conf', 'x0', 'y0', 'x1', 'y1'];
+        const headerRow = document.createElement('tr');
+        headers.forEach(h => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+
+        // Create data rows (limit to first 50 for performance)
+        const maxRows = Math.min(state.words.length, 50);
+        for (let i = 0; i < maxRows; i++) {
+            const word = state.words[i];
+            const row = document.createElement('tr');
+            const cells = [
+                word.word_id,
+                word.text,
+                word.source,
+                word.status,
+                (word.confidence || 0).toFixed(1),
+                (word.x0 || 0).toFixed(1),
+                (word.y0 || 0).toFixed(1),
+                (word.x1 || 0).toFixed(1),
+                (word.y1 || 0).toFixed(1),
+            ];
+            cells.forEach(cell => {
+                const td = document.createElement('td');
+                td.textContent = cell;
+                row.appendChild(td);
+            });
+            tbody.appendChild(row);
+        }
+
+        if (state.words.length > maxRows) {
+            const row = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = headers.length;
+            td.style.textAlign = 'center';
+            td.style.fontStyle = 'italic';
+            td.textContent = `... and ${state.words.length - maxRows} more rows`;
+            row.appendChild(td);
+            tbody.appendChild(row);
+        }
+    }
+
+    modal.classList.remove('hidden');
 }

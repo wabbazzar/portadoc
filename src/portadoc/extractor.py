@@ -9,12 +9,15 @@ from .ocr.tesseract import extract_words_tesseract, is_tesseract_available
 from .ocr.easyocr import extract_words_easyocr, is_easyocr_available
 from .ocr.paddleocr import extract_words_paddleocr, is_paddleocr_available
 from .ocr.doctr_ocr import extract_words_doctr, is_doctr_available
+from .ocr.surya_ocr import extract_words_surya, is_surya_available
 from .detection import detect_missed_content
 from .harmonize import harmonize
 from .preprocess import PreprocessLevel, preprocess_for_ocr, auto_detect_quality
 from .superres import upscale_image
 from .triage import TriageLevel, triage_words
 from .config import PortadocConfig, get_config, load_config
+from .geometric_clustering import order_words_by_reading
+from .page_align import align_page, transform_bbox_to_original
 
 
 def extract_words(
@@ -24,6 +27,7 @@ def extract_words(
     use_easyocr: bool = True,
     use_paddleocr: bool = False,
     use_doctr: bool = False,
+    use_surya: bool = True,
     use_pixel_detection: bool = True,
     gpu: bool = False,
     preprocess: Optional[str] = "auto",
@@ -35,21 +39,25 @@ def extract_words(
     easyocr_text_threshold: float = 0.7,
     config_path: Optional[str | Path] = None,
     progress_callback: Optional[callable] = None,
+    use_reading_order: bool = True,
+    primary_engine: Optional[str] = None,
+    align_pages: bool = True,
 ) -> list[HarmonizedWord]:
     """
     Extract words from a PDF using smart harmonization with full tracking.
 
-    Uses Tesseract as primary engine for word boundaries.
+    Uses a configurable primary engine for word boundaries (default: tesseract).
     Secondary engines vote on text only and can add high-confidence detections.
     All detections are tracked with status and Levenshtein distances.
 
     Args:
         pdf_path: Path to PDF file
         dpi: Resolution for rendering pages
-        use_tesseract: Whether to use Tesseract OCR (primary engine)
+        use_tesseract: Whether to use Tesseract OCR
         use_easyocr: Whether to use EasyOCR
         use_paddleocr: Whether to use PaddleOCR (default: False)
         use_doctr: Whether to use docTR OCR (default: False)
+        use_surya: Whether to use Surya OCR (default: True)
         use_pixel_detection: Whether to use pixel detection fallback
         gpu: Whether to use GPU for EasyOCR/PaddleOCR (default: False)
         preprocess: Preprocessing level - "none", "light", "standard", "aggressive", or "auto"
@@ -61,6 +69,13 @@ def extract_words(
         easyocr_text_threshold: EasyOCR text detection threshold (default: 0.7)
         config_path: Path to config file (uses default if None)
         progress_callback: Optional callback(page_num, total_pages, stage) for progress reporting
+        use_reading_order: Use geometric clustering for proper reading order (default: True).
+            When True, words are ordered by column-aware reading sequence.
+            When False, words are ordered by simple (page, y, x) coordinates.
+        primary_engine: Primary OCR engine for bbox authority ("tesseract", "surya", "doctr").
+            If None, uses config setting (default: tesseract).
+        align_pages: Auto-detect and correct page orientation (default: True).
+            Uses Tesseract OSD to detect 90/180/270 degree rotations.
 
     Returns:
         List of HarmonizedWord with full tracking
@@ -70,15 +85,31 @@ def extract_words(
     # Load config
     config = load_config(config_path) if config_path else get_config()
 
+    # Determine primary engine (CLI override > config > default)
+    primary = primary_engine or config.harmonize.primary.engine or "tesseract"
+
     # Check OCR availability
     tesseract_ok = is_tesseract_available() if use_tesseract else False
     easyocr_ok = is_easyocr_available() if use_easyocr else False
     paddleocr_ok = is_paddleocr_available() if use_paddleocr else False
     doctr_ok = is_doctr_available() if use_doctr else False
+    surya_ok = is_surya_available() if use_surya else False
 
-    if not tesseract_ok:
+    # Map engine names to availability
+    engine_available = {
+        "tesseract": tesseract_ok,
+        "easyocr": easyocr_ok,
+        "paddleocr": paddleocr_ok,
+        "doctr": doctr_ok,
+        "surya": surya_ok,
+    }
+
+    # Validate primary engine is available
+    if primary not in engine_available:
+        raise RuntimeError(f"Unknown primary engine: {primary}")
+    if not engine_available[primary]:
         raise RuntimeError(
-            "Tesseract is required as primary engine. Install tesseract-ocr."
+            f"Primary engine '{primary}' is not available. Install it or choose another."
         )
 
     all_harmonized: list[HarmonizedWord] = []
@@ -91,6 +122,25 @@ def extract_words(
             # Report progress: starting page
             if progress_callback:
                 progress_callback(page_num, total_pages, "processing")
+
+            # Store original page dimensions for coordinate transformation
+            original_page_width = page_width
+            original_page_height = page_height
+            rotation_angle = 0
+
+            # Page alignment: detect and correct rotation
+            if align_pages and config.page_alignment.enabled:
+                image, orientation = align_page(
+                    image,
+                    method=config.page_alignment.method,
+                    min_confidence=config.page_alignment.min_confidence,
+                    allowed_angles=config.page_alignment.angles,
+                    surya_fallback_threshold=config.page_alignment.surya_fallback_threshold,
+                )
+                rotation_angle = orientation.angle
+                # If rotated 90 or 270 degrees, dimensions swap for OCR
+                if orientation.angle in [90, 270]:
+                    page_width, page_height = page_height, page_width
 
             # Apply super-resolution if requested (before preprocessing)
             ocr_image = image
@@ -105,36 +155,45 @@ def extract_words(
                     level = PreprocessLevel(preprocess)
                 ocr_image = preprocess_for_ocr(ocr_image, level=level, return_rgb=True)
 
-            # Extract words from Tesseract (PRIMARY)
+            # Extract words from all enabled engines
+            all_engine_results: dict[str, list[Word]] = {}
             tess_config = f"--psm {tesseract_psm} --oem {tesseract_oem}"
-            primary_words = extract_words_tesseract(
-                ocr_image, page_num, page_width, page_height, config=tess_config
-            )
 
-            # Extract words from secondary engines
-            secondary_results: dict[str, list[Word]] = {}
+            if tesseract_ok:
+                all_engine_results["tesseract"] = extract_words_tesseract(
+                    ocr_image, page_num, page_width, page_height, config=tess_config
+                )
 
             if easyocr_ok:
-                easy_words = extract_words_easyocr(
+                all_engine_results["easyocr"] = extract_words_easyocr(
                     ocr_image, page_num, page_width, page_height, gpu=gpu,
                     decoder=easyocr_decoder, text_threshold=easyocr_text_threshold
                 )
-                secondary_results["easyocr"] = easy_words
 
             if paddleocr_ok:
-                paddle_words = extract_words_paddleocr(
+                all_engine_results["paddleocr"] = extract_words_paddleocr(
                     ocr_image, page_num, page_width, page_height, use_gpu=gpu
                 )
-                secondary_results["paddleocr"] = paddle_words
 
             if doctr_ok:
-                doctr_words = extract_words_doctr(
+                all_engine_results["doctr"] = extract_words_doctr(
                     ocr_image, page_num, page_width, page_height
                 )
-                secondary_results["doctr"] = doctr_words
+
+            if surya_ok:
+                all_engine_results["surya"] = extract_words_surya(
+                    ocr_image, page_num, page_width, page_height
+                )
+
+            # Split into primary and secondary based on config
+            primary_words = all_engine_results.get(primary, [])
+            secondary_results: dict[str, list[Word]] = {
+                eng: words for eng, words in all_engine_results.items()
+                if eng != primary
+            }
 
             # Harmonize results
-            page_harmonized = harmonize(primary_words, secondary_results, config)
+            page_harmonized = harmonize(primary_words, secondary_results, config, primary_engine=primary)
 
             # Pixel detection fallback for missed content
             if use_pixel_detection:
@@ -157,6 +216,11 @@ def extract_words(
                     )
                     page_harmonized.append(hw)
 
+            # Store rotation angle on each word so the UI can rotate PDF display
+            # Bboxes stay in rotated coordinate space (no transform back to original)
+            for hw in page_harmonized:
+                hw.rotation = rotation_angle
+
             # Assign word IDs
             for hw in page_harmonized:
                 hw.word_id = word_id_counter
@@ -164,12 +228,16 @@ def extract_words(
 
             all_harmonized.extend(page_harmonized)
 
-    # Sort by page, then by y position, then x position
-    all_harmonized.sort(key=lambda w: (w.page, w.bbox.y0, w.bbox.x0))
-
-    # Reassign word IDs after sorting
-    for i, hw in enumerate(all_harmonized):
-        hw.word_id = i
+    # Order words for reading
+    if use_reading_order:
+        # Use geometric clustering for proper column-aware reading order
+        all_harmonized = order_words_by_reading(all_harmonized)
+    else:
+        # Simple coordinate-based sorting (legacy behavior)
+        all_harmonized.sort(key=lambda w: (w.page, w.bbox.y0, w.bbox.x0))
+        # Reassign word IDs after sorting
+        for i, hw in enumerate(all_harmonized):
+            hw.word_id = i
 
     return all_harmonized
 
@@ -181,6 +249,7 @@ def extract_document(
     use_easyocr: bool = True,
     use_paddleocr: bool = False,
     use_doctr: bool = False,
+    use_surya: bool = True,
     use_pixel_detection: bool = True,
     gpu: bool = False,
     preprocess: Optional[str] = "auto",
@@ -193,6 +262,9 @@ def extract_document(
     easyocr_text_threshold: float = 0.7,
     config_path: Optional[str | Path] = None,
     progress_callback: Optional[callable] = None,
+    use_reading_order: bool = True,
+    primary_engine: Optional[str] = None,
+    align_pages: bool = True,
 ) -> Document:
     """
     Extract words from a PDF and return as Document object.
@@ -208,6 +280,7 @@ def extract_document(
         use_easyocr: Whether to use EasyOCR
         use_paddleocr: Whether to use PaddleOCR (default: False)
         use_doctr: Whether to use docTR OCR (default: False)
+        use_surya: Whether to use Surya OCR (default: False)
         use_pixel_detection: Whether to use pixel detection fallback
         gpu: Whether to use GPU for EasyOCR/PaddleOCR (default: False)
         preprocess: Preprocessing level - "none", "light", "standard", "aggressive", or "auto"
@@ -220,6 +293,7 @@ def extract_document(
         easyocr_text_threshold: EasyOCR text detection threshold (default: 0.7)
         config_path: Path to config file (uses default if None)
         progress_callback: Optional callback(page_num, total_pages, stage) for progress reporting
+        use_reading_order: Use geometric clustering for proper reading order (default: True)
 
     Returns:
         Document with extracted words
@@ -234,6 +308,7 @@ def extract_document(
         use_easyocr=use_easyocr,
         use_paddleocr=use_paddleocr,
         use_doctr=use_doctr,
+        use_surya=use_surya,
         use_pixel_detection=use_pixel_detection,
         gpu=gpu,
         preprocess=preprocess,
@@ -245,6 +320,9 @@ def extract_document(
         easyocr_text_threshold=easyocr_text_threshold,
         config_path=config_path,
         progress_callback=progress_callback,
+        use_reading_order=use_reading_order,
+        primary_engine=primary_engine,
+        align_pages=align_pages,
     )
 
     # Convert to Document

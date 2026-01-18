@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Wrapper script to run portadoc from repo root without activating venv
+# Usage: ./portadoc <command> [args...]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_BIN="$SCRIPT_DIR/.venv/bin"
+
+if [ ! -f "$VENV_BIN/portadoc" ]; then
+    echo "Error: portadoc not installed. Run 'make install' first." >&2
+    exit 1
+fi
+
+exec "$VENV_BIN/portadoc" "$@"

@@ -118,7 +118,7 @@ def write_harmonized_csv(
 
     CSV columns (dense format):
     word_id, page, x0, y0, x1, y1, text, status, source, conf,
-    tess, easy, doctr, paddle, dist_tess, dist_easy, dist_doctr, dist_paddle
+    tess, easy, doctr, paddle, surya, dist_tess, dist_easy, dist_doctr, dist_paddle, dist_surya
 
     Args:
         words: List of HarmonizedWord objects
@@ -129,12 +129,12 @@ def write_harmonized_csv(
     # Base fieldnames
     fieldnames = [
         "word_id", "page", "x0", "y0", "x1", "y1",
-        "text", "status", "source", "conf",
-        "tess", "easy", "doctr", "paddle",
+        "text", "status", "source", "conf", "rotation",
+        "tess", "easy", "doctr", "paddle", "surya",
     ]
 
     if include_distances:
-        fieldnames.extend(["dist_tess", "dist_easy", "dist_doctr", "dist_paddle"])
+        fieldnames.extend(["dist_tess", "dist_easy", "dist_doctr", "dist_paddle", "dist_surya"])
 
     def write_to_file(f: TextIO) -> None:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -156,10 +156,12 @@ def write_harmonized_csv(
                 "status": hw.status,
                 "source": hw.source,
                 "conf": round(hw.confidence, 1),
+                "rotation": hw.rotation,
                 "tess": hw.tess_text,
                 "easy": hw.easy_text,
                 "doctr": hw.doctr_text,
                 "paddle": hw.paddle_text,
+                "surya": hw.surya_text,
             }
 
             if include_distances:
@@ -167,6 +169,7 @@ def write_harmonized_csv(
                 row["dist_easy"] = hw.dist_easy if hw.dist_easy >= 0 else ""
                 row["dist_doctr"] = hw.dist_doctr if hw.dist_doctr >= 0 else ""
                 row["dist_paddle"] = hw.dist_paddle if hw.dist_paddle >= 0 else ""
+                row["dist_surya"] = hw.dist_surya if hw.dist_surya >= 0 else ""
 
             writer.writerow(row)
 

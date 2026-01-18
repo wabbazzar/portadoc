@@ -48,6 +48,14 @@ harmonize:
         weight: 0.8               # Mid-range weight
         garbage_penalty: 0.1
         bbox_type: word
+      surya:
+        enabled: true             # SOTA accuracy, word-level
+        weight: 1.2               # Highest accuracy - trust Surya text
+        garbage_penalty: 0.1
+        bbox_type: word
+        # Surya bboxes can be offset - use looser matching
+        iou_threshold_override: 0.08  # Lower threshold for Surya
+        center_distance_max_override: 50.0  # Allow larger center offset
 
   # Garbage text detection
   garbage_detection:
@@ -80,6 +88,14 @@ ocr:
   doctr:
     pretrained: true
     assume_straight_pages: true
+
+# Page alignment (auto-rotation) settings
+page_alignment:
+  enabled: true                    # Master switch for page alignment
+  method: auto                     # Detection method: tesseract_osd, surya, or auto (OSD with Surya fallback)
+  min_confidence: 0.1              # Min confidence to apply rotation (0-1). OSD confidence is typically low (0.1-0.3) even for correct detections.
+  angles: [90, 180, 270]           # Which rotations to detect/correct
+  surya_fallback_threshold: 0.05   # If using "auto" method, use Surya when OSD confidence is below this
 
 # Output settings
 output:

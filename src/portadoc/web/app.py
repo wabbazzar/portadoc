@@ -5,7 +5,7 @@ import io
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi import APIRouter, FastAPI, HTTPException, Query, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -22,11 +22,13 @@ class ExtractionRequest(BaseModel):
     pdf_path: str
     use_tesseract: bool = True
     use_easyocr: bool = True
-    use_paddleocr: bool = False
-    use_doctr: bool = False
+    use_paddleocr: bool = True
+    use_doctr: bool = True
+    use_surya: bool = True
     preprocess: str = "none"
     psm: int = 6
     oem: int = 3
+    primary_engine: Optional[str] = None  # None = use config default
 
 
 class WordData(BaseModel):
@@ -41,10 +43,12 @@ class WordData(BaseModel):
     status: str
     source: str
     confidence: float
+    rotation: int = 0
     tess_text: Optional[str] = None
     easy_text: Optional[str] = None
     doctr_text: Optional[str] = None
     paddle_text: Optional[str] = None
+    surya_text: Optional[str] = None
 
 
 def get_output_path(pdf_path: Path) -> Path:
@@ -71,11 +75,13 @@ def load_words_from_csv(csv_path: Path) -> list[dict]:
                 "text": row.get("text", ""),
                 "status": row.get("status", ""),
                 "source": row.get("source", ""),
-                "confidence": float(row.get("confidence", 0) or 0),
+                "confidence": float(row.get("conf", 0) or 0),
+                "rotation": int(row.get("rotation", 0) or 0),
                 "tess_text": row.get("tess", ""),
                 "easy_text": row.get("easy", ""),
                 "doctr_text": row.get("doctr", ""),
                 "paddle_text": row.get("paddle", ""),
+                "surya_text": row.get("surya", ""),
             }
             words.append(word)
     return words
@@ -89,10 +95,15 @@ async def list_pdfs(directory: str = None):
         return {"pdfs": [], "error": f"Directory not found: {pdf_dir}"}
 
     pdfs = []
-    for pdf_file in pdf_dir.glob("*.pdf"):
+    # Include PDFs from root dir and uploads subdirectory
+    for pdf_file in pdf_dir.glob("**/*.pdf"):
         output_path = get_output_path(pdf_file)
+        # Show relative path for nested files
+        display_name = pdf_file.name
+        if pdf_file.parent != pdf_dir:
+            display_name = f"{pdf_file.parent.name}/{pdf_file.name}"
         pdfs.append({
-            "name": pdf_file.name,
+            "name": display_name,
             "path": str(pdf_file),
             "has_extraction": output_path.exists(),
             "extraction_path": str(output_path) if output_path.exists() else None,
@@ -144,12 +155,14 @@ async def get_words(filename: str):
 
     words = load_words_from_csv(output_path)
 
-    # Group by page
+    # Group by page and collect rotation per page
     pages = {}
+    page_rotations = {}
     for word in words:
         page = word["page"]
         if page not in pages:
             pages[page] = []
+            page_rotations[page] = word.get("rotation", 0)
         pages[page].append(word)
 
     # Stats
@@ -166,10 +179,36 @@ async def get_words(filename: str):
         "extracted": True,
         "total_words": len(words),
         "pages": len(pages),
+        "page_rotations": page_rotations,
         "status_counts": status_counts,
         "source_counts": source_counts,
         "pdf_path": str(pdf_path),
         "csv_path": str(output_path),
+    }
+
+
+@router.post("/api/upload")
+async def upload_pdf(file: UploadFile = File(...)):
+    """Upload a PDF file for processing."""
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+
+    # Save to uploads directory
+    uploads_dir = DEFAULT_PDF_DIR / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    # Use original filename
+    file_path = uploads_dir / file.filename
+
+    # Write the file
+    content = await file.read()
+    with open(file_path, 'wb') as f:
+        f.write(content)
+
+    return {
+        "success": True,
+        "filename": file.filename,
+        "path": str(file_path),
     }
 
 
@@ -197,9 +236,11 @@ async def extract_pdf(request: ExtractionRequest):
             use_easyocr=request.use_easyocr,
             use_paddleocr=request.use_paddleocr,
             use_doctr=request.use_doctr,
+            use_surya=request.use_surya,
             preprocess=request.preprocess,
             tesseract_psm=request.psm,
             tesseract_oem=request.oem,
+            primary_engine=request.primary_engine,
         )
 
         # Save to CSV
@@ -217,6 +258,42 @@ async def extract_pdf(request: ExtractionRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/reading-order/{filename:path}")
+async def get_reading_order(filename: str, page: int = Query(0, ge=0)):
+    """Get reconstructed reading order text for a PDF page."""
+    from ..reading_order import reconstruct_lines, lines_to_json
+
+    # Determine PDF path
+    pdf_path = Path(filename)
+    if not pdf_path.exists():
+        pdf_path = DEFAULT_PDF_DIR / filename
+
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail=f"PDF not found: {filename}")
+
+    # Check for existing extraction
+    output_path = get_output_path(pdf_path)
+
+    if not output_path.exists():
+        return {
+            "lines": [],
+            "extracted": False,
+            "message": "No extraction found. Run extraction first.",
+            "page": page,
+        }
+
+    words = load_words_from_csv(output_path)
+    lines = reconstruct_lines(words, page)
+
+    return {
+        "lines": lines_to_json(lines),
+        "extracted": True,
+        "page": page,
+        "total_lines": len(lines),
+        "total_words": sum(len(line.words) for line in lines),
+    }
 
 
 @router.get("/api/config")
@@ -243,6 +320,7 @@ async def get_current_config():
             "easyocr": config.harmonize.secondary.engines.get("easyocr", {}).enabled if hasattr(config.harmonize.secondary.engines.get("easyocr", {}), 'enabled') else True,
             "paddleocr": config.harmonize.secondary.engines.get("paddleocr", {}).enabled if hasattr(config.harmonize.secondary.engines.get("paddleocr", {}), 'enabled') else True,
             "doctr": config.harmonize.secondary.engines.get("doctr", {}).enabled if hasattr(config.harmonize.secondary.engines.get("doctr", {}), 'enabled') else True,
+            "surya": config.harmonize.secondary.engines.get("surya", {}).enabled if hasattr(config.harmonize.secondary.engines.get("surya", {}), 'enabled') else True
         },
     }
 

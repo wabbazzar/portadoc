@@ -21,6 +21,9 @@ class EngineConfig:
     weight: float = 1.0
     garbage_penalty: float = 0.1
     bbox_type: str = "word"  # "word" or "line"
+    # Per-engine matching overrides (for engines with offset bboxes like Surya)
+    iou_threshold_override: Optional[float] = None
+    center_distance_max_override: Optional[float] = None
 
 
 @dataclass
@@ -119,11 +122,22 @@ class OutputConfig:
 
 
 @dataclass
+class PageAlignmentConfig:
+    """Page alignment (auto-rotation) configuration."""
+    enabled: bool = True
+    method: str = "auto"  # tesseract_osd, surya, or auto (OSD with Surya fallback)
+    min_confidence: float = 0.1  # OSD confidence is typically low (0.1-0.3) even for correct detections
+    angles: list[int] = field(default_factory=lambda: [90, 180, 270])
+    surya_fallback_threshold: float = 0.05  # Use Surya when OSD confidence below this
+
+
+@dataclass
 class PortadocConfig:
     """Root configuration object."""
     harmonize: HarmonizeConfig = field(default_factory=HarmonizeConfig)
     ocr: OCRConfig = field(default_factory=OCRConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    page_alignment: PageAlignmentConfig = field(default_factory=PageAlignmentConfig)
 
 
 def _parse_engine_config(data: dict) -> EngineConfig:
@@ -133,6 +147,8 @@ def _parse_engine_config(data: dict) -> EngineConfig:
         weight=data.get("weight", 1.0),
         garbage_penalty=data.get("garbage_penalty", 0.1),
         bbox_type=data.get("bbox_type", "word"),
+        iou_threshold_override=data.get("iou_threshold_override"),
+        center_distance_max_override=data.get("center_distance_max_override"),
     )
 
 
@@ -246,6 +262,15 @@ def _parse_config(data: dict) -> PortadocConfig:
             config.output.csv.include_all_engines = c.get("include_all_engines", True)
             config.output.csv.include_distances = c.get("include_distances", True)
             config.output.csv.include_pixel_detections = c.get("include_pixel_detections", True)
+
+    # Parse page_alignment section
+    if "page_alignment" in data:
+        pa = data["page_alignment"]
+        config.page_alignment.enabled = pa.get("enabled", True)
+        config.page_alignment.method = pa.get("method", "auto")
+        config.page_alignment.min_confidence = pa.get("min_confidence", 0.1)
+        config.page_alignment.angles = pa.get("angles", [90, 180, 270])
+        config.page_alignment.surya_fallback_threshold = pa.get("surya_fallback_threshold", 0.05)
 
     return config
 
