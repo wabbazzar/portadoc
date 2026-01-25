@@ -66,3 +66,4 @@ status.json
 
 # Extracted data files
 data/input/*_extracted.csv
+src/portadoc/browser/node_modules/
