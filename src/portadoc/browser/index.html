@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portadoc Browser</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Portadoc Browser</h1>
+      <p>Client-side PDF word extraction with OCR</p>
+    </header>
+
+    <main>
+      <section id="upload-section">
+        <div id="drop-zone">
+          <p>Drop PDF or image here, or click to select</p>
+          <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg" />
+        </div>
+      </section>
+
+      <section id="controls-section" class="hidden">
+        <div id="engine-controls">
+          <label>
+            <input type="checkbox" id="use-tesseract" checked />
+            Tesseract.js
+          </label>
+          <label>
+            <input type="checkbox" id="use-doctr" checked />
+            docTR
+          </label>
+        </div>
+        <div id="page-controls">
+          <button id="prev-page" disabled>&larr; Prev</button>
+          <span id="page-info">Page 1 of 1</span>
+          <button id="next-page" disabled>Next &rarr;</button>
+        </div>
+        <button id="extract-btn" class="primary">Extract Words</button>
+      </section>
+
+      <section id="progress-section" class="hidden">
+        <div id="progress-bar">
+          <div id="progress-fill"></div>
+        </div>
+        <p id="progress-text">Loading...</p>
+      </section>
+
+      <section id="viewer-section" class="hidden">
+        <div id="canvas-container">
+          <canvas id="pdf-canvas"></canvas>
+          <div id="bbox-overlay"></div>
+        </div>
+        <div id="words-panel">
+          <div id="words-header">
+            <h3>Extracted Words</h3>
+            <span id="word-count">0 words</span>
+          </div>
+          <div id="words-list"></div>
+          <div id="export-controls">
+            <button id="export-csv">Export CSV</button>
+            <button id="export-json">Export JSON</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Powered by Tesseract.js and docTR-TFJS</p>
+    </footer>
+  </div>
+
+  <script type="module" src="./app.ts"></script>
+</body>
+</html>

@@ -1,79 +1,112 @@
-# Agent Instructions - Portadoc
+# Agent Instructions - Browser Portadoc Client
 
-## Environment Setup
-
-**ALWAYS run before any Python command:**
-```bash
-source .venv/bin/activate
-```
-
-## Build & Install
+## Build Commands
 
 ```bash
-# Install in development mode
-pip install -e .
+# Initial setup (run once)
+cd src/portadoc/browser
+npm install
 
-# Install all dependencies
-pip install -r requirements.txt
+# Development server with hot reload
+npm run dev
+# Opens at http://localhost:5173
+
+# Production build
+npm run build
+
+# Type checking
+npm run typecheck
 ```
 
 ## Test Commands
 
 ```bash
-# Run unit tests
-pytest tests/ -v
+# No automated tests yet - use manual validation with dev-browser
 
-# Run specific test
-pytest tests/test_harmonize.py -v
+# Validation workflow:
+# 1. Start dev server: cd src/portadoc/browser && npm run dev
+# 2. Use dev-browser skill to navigate to http://localhost:5173
+# 3. Upload test PDFs and verify extraction
 ```
 
-## Extraction Commands
+## Run Commands
 
 ```bash
-# Extract with smart harmonization (default)
-make extract-smart PDF=data/input/peter_lou_50dpi.pdf
+# Development
+cd src/portadoc/browser && npm run dev
 
-# Extract with all 4 engines
-make extract-all PDF=data/input/peter_lou_50dpi.pdf
-
-# View output
-cat data/output/peter_lou_50dpi_extracted.csv | head -30
+# Preview production build
+cd src/portadoc/browser && npm run preview
 ```
 
-## Evaluation Commands
+## Test Data
 
-```bash
-# Evaluate degraded PDF (main target)
-make eval-smart PDF=data/input/peter_lou_50dpi.pdf
+| File | Description |
+|------|-------------|
+| `data/input/peter_lou.pdf` | Clean 3-page test PDF |
+| `data/input/peter_lou_50dpi.pdf` | Degraded version for stress testing |
+| `data/input/peter_lou_words_slim.csv` | Ground truth (401 words, correct reading order) |
+| `data/input/peter_lou_50dpi_page*.jpg` | Pre-converted JPG images for quick testing |
 
-# Regression check - clean PDF (should stay >= 99% F1)
-make eval-smart PDF=data/input/peter_lou.pdf
+## Validation Criteria
+
+### Benchmark: peter_lou.pdf (clean)
+- Tesseract.js alone: ≥80% word match (≥320 of 401 words)
+- docTR-TFJS alone: ≥80% word match (≥320 of 401 words)
+- Reading order: must match ground truth CSV sequence
+
+### Stress test: peter_lou_50dpi.pdf (degraded)
+- Must process without crashing
+- Words extracted (accuracy not required)
+
+## Architecture
+
+```
+src/portadoc/browser/
+├── index.html              # Main page
+├── app.ts                  # Main application logic
+├── pdf-loader.ts           # PDF.js wrapper
+├── ocr/
+│   ├── tesseract.ts        # Tesseract.js wrapper
+│   └── doctr.ts            # docTR-TFJS wrapper
+├── geometric-clustering.ts # Reading order algorithm
+├── harmonize.ts            # Multi-engine result fusion
+├── models.ts               # TypeScript interfaces
+└── styles.css              # Styling
 ```
 
-## Key Files
+## Key Dependencies
 
-| File | Purpose |
-|------|---------|
-| `src/portadoc/harmonize.py` | Main harmonization logic - PRIMARY TARGET |
-| `src/portadoc/config.py` | Configuration classes |
-| `config/harmonize.yaml` | OCR settings and thresholds |
-| `data/output/peter_lou_extracted.csv` | Gold standard (clean PDF) |
-| `data/output/peter_lou_50dpi_extracted.csv` | Current degraded output |
-
-## Debugging
-
-```bash
-# Extract with verbose output
-portadoc extract data/input/peter_lou_50dpi.pdf --verbose
-
-# Check specific rows in output
-cat data/output/peter_lou_50dpi_extracted.csv | head -25
+```json
+{
+  "dependencies": {
+    "pdfjs-dist": "^4.0.0",
+    "tesseract.js": "^5.0.0",
+    "@tensorflow/tfjs": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  }
+}
 ```
 
-## Validation Checklist
+## GUI Testing
 
-Before marking EXIT_SIGNAL = true:
+Use **dev-browser** skill for visual verification:
 
-1. [ ] `make eval-smart PDF=data/input/peter_lou_50dpi.pdf` shows improvement
-2. [ ] `make eval-smart PDF=data/input/peter_lou.pdf` F1 >= 99% (no regression)
-3. [ ] All @fix_plan.md items marked [x]
+```
+1. Navigate to http://localhost:5173
+2. Upload PDF or image
+3. Wait for OCR to complete
+4. Take screenshot
+5. Verify bounding boxes are displayed
+Save screenshots to screenshots/browser-client-[step].png
+```
+
+## Common Issues
+
+1. **CORS errors with PDF.js worker**: Use local worker file or configure Vite proxy
+2. **TensorFlow.js memory**: Call `tf.dispose()` on tensors after use
+3. **Tesseract.js slow first load**: Language data downloads ~10MB on first use
+4. **docTR model loading**: Models are ~50-100MB, show progress indicator

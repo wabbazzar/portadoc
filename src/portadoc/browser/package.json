@@ -1,0 +1,20 @@
+{
+  "name": "portadoc-browser",
+  "version": "1.0.0",
+  "description": "Browser-based Portadoc OCR client",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^4.8.69",
+    "tesseract.js": "^5.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7"
+  }
+}
