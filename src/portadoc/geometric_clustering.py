@@ -13,6 +13,8 @@ Algorithm Overview:
 
 The Q1 (first quartile) threshold ensures aggressive gap detection, preventing
 words from different columns from being grouped together.
+
+All thresholds are configurable via config/harmonize.yaml under geometric_clustering.
 """
 
 from dataclasses import dataclass, field
@@ -20,17 +22,15 @@ from typing import List, Tuple, Optional
 import numpy as np
 
 from portadoc.models import HarmonizedWord, BBox
+from portadoc.config import get_config, GeometricClusteringConfig
+
+# Default y-fuzz tolerance for row grouping (exported for tests)
+DEFAULT_Y_FUZZ = 5.0
 
 
-# Default thresholds when calculation isn't possible
-DEFAULT_X_THRESHOLD = 50.0
-DEFAULT_Y_THRESHOLD = 20.0
-DEFAULT_Y_FUZZ = 5.0  # Default y-fuzz for row grouping when estimation fails
-
-# Multipliers for threshold calculation
-Q1_MULTIPLIER = 1.5  # For inter-cluster gaps
-INTRA_CLUSTER_MULTIPLIER = 1.2  # For intra-cluster outlier detection
-Y_FUZZ_MULTIPLIER = 2.0  # Multiplier on std for y-fuzz tolerance
+def _get_gc_config() -> GeometricClusteringConfig:
+    """Get geometric clustering config from global config."""
+    return get_config().geometric_clustering
 
 
 @dataclass
@@ -169,7 +169,7 @@ def y_overlap_ratio(w1: HarmonizedWord, w2: HarmonizedWord) -> float:
 
 def calculate_distance_thresholds(words: List[HarmonizedWord]) -> Tuple[float, float]:
     """
-    Calculate clustering thresholds using Q1 * 1.5 of inter-word distances.
+    Calculate clustering thresholds using Q1 * multiplier of inter-word distances.
 
     Uses first quartile to aggressively detect gaps between columns/sections.
 
@@ -179,8 +179,10 @@ def calculate_distance_thresholds(words: List[HarmonizedWord]) -> Tuple[float, f
     Returns:
         Tuple of (x_threshold, y_threshold)
     """
+    cfg = _get_gc_config()
+
     if len(words) < 2:
-        return (DEFAULT_X_THRESHOLD, DEFAULT_Y_THRESHOLD)
+        return (cfg.thresholds.default_x, cfg.thresholds.default_y)
 
     # Sort by rough reading order (top-to-bottom, left-to-right)
     sorted_words = sorted(words, key=lambda w: (w.page, w.bbox.center_y, w.bbox.center_x))
@@ -205,17 +207,19 @@ def calculate_distance_thresholds(words: List[HarmonizedWord]) -> Tuple[float, f
             y_distances.append(y_dist)
 
     # Calculate Q1 * multiplier for thresholds
+    q1_mult = cfg.thresholds.q1_multiplier
+
     if x_distances:
         x_q1 = np.percentile(x_distances, 25)
-        x_threshold = x_q1 * Q1_MULTIPLIER
+        x_threshold = x_q1 * q1_mult
     else:
-        x_threshold = DEFAULT_X_THRESHOLD
+        x_threshold = cfg.thresholds.default_x
 
     if y_distances:
         y_q1 = np.percentile(y_distances, 25)
-        y_threshold = y_q1 * Q1_MULTIPLIER
+        y_threshold = y_q1 * q1_mult
     else:
-        y_threshold = DEFAULT_Y_THRESHOLD
+        y_threshold = cfg.thresholds.default_y
 
     # Ensure minimum thresholds
     x_threshold = max(x_threshold, 5.0)
@@ -244,8 +248,11 @@ def estimate_y_fuzz(words: List[HarmonizedWord], x_threshold: float) -> float:
     Returns:
         Y-fuzz tolerance value (in pixels/points)
     """
+    cfg = _get_gc_config()
+    y_fuzz_cfg = cfg.y_fuzz
+
     if len(words) < 2:
-        return DEFAULT_Y_FUZZ
+        return y_fuzz_cfg.default
 
     # Find pairs of horizontally adjacent words
     # These are words that are close horizontally (potential same-row)
@@ -283,7 +290,7 @@ def estimate_y_fuzz(words: List[HarmonizedWord], x_threshold: float) -> float:
 
     if len(y_center_diffs) < 3:
         # Not enough data, use default
-        return DEFAULT_Y_FUZZ
+        return y_fuzz_cfg.default
 
     # Use std of y-center differences as noise estimate
     y_std = np.std(y_center_diffs)
@@ -293,21 +300,21 @@ def estimate_y_fuzz(words: List[HarmonizedWord], x_threshold: float) -> float:
     y_median = np.median(y_center_diffs)
 
     # Y-fuzz should be at least the median difference plus some margin
-    # and at least 2x the std to capture most variation
+    # and at least multiplier * the std to capture most variation
     y_fuzz = max(
         y_median + y_std,  # Median plus one std
-        y_std * Y_FUZZ_MULTIPLIER,  # 2x std
-        DEFAULT_Y_FUZZ  # Minimum floor
+        y_std * y_fuzz_cfg.multiplier,  # configurable multiplier on std
+        y_fuzz_cfg.default  # Minimum floor
     )
 
-    # Cap at a reasonable maximum (half typical line height)
+    # Cap at configurable fraction of avg line height
     avg_height = np.mean([w.bbox.height for w in words])
-    y_fuzz = min(y_fuzz, avg_height * 0.5)
+    y_fuzz = min(y_fuzz, avg_height * y_fuzz_cfg.max_height_ratio)
 
     return y_fuzz
 
 
-def detect_column_boundaries(words: List[HarmonizedWord], y_fuzz: float = DEFAULT_Y_FUZZ) -> List[float]:
+def detect_column_boundaries(words: List[HarmonizedWord], y_fuzz: float = None) -> List[float]:
     """
     Detect major vertical column boundaries in the document layout.
 
@@ -323,6 +330,9 @@ def detect_column_boundaries(words: List[HarmonizedWord], y_fuzz: float = DEFAUL
     """
     if len(words) < 2:
         return []
+
+    if y_fuzz is None:
+        y_fuzz = _get_gc_config().y_fuzz.default
 
     # Group words into rows based on y-center proximity (using y_fuzz)
     rows = []
@@ -400,7 +410,7 @@ def build_clusters(
     words: List[HarmonizedWord],
     x_threshold: float,
     y_threshold: float,
-    y_fuzz: float = DEFAULT_Y_FUZZ
+    y_fuzz: float = None
 ) -> List[Cluster]:
     """
     Build clusters using union-find based on spatial proximity and column detection.
@@ -428,6 +438,11 @@ def build_clusters(
     if not words:
         return []
 
+    cfg = _get_gc_config()
+
+    if y_fuzz is None:
+        y_fuzz = cfg.y_fuzz.default
+
     n = len(words)
     uf = UnionFind(n)
 
@@ -437,11 +452,11 @@ def build_clusters(
     # Assign words to columns
     word_columns = [assign_column(w, boundaries) for w in words]
 
-    # Thresholds for different connection types
-    X_OVERLAP_MIN = 0.30  # 30% x-overlap needed for column alignment
-    Y_OVERLAP_MIN = 0.50  # 50% y-overlap for same-row detection
-    VERTICAL_MULTIPLIER = 3.0  # Allow larger y-gaps for column-aligned words
-    SAME_ROW_X_MULTIPLIER = 8.0  # Allow larger x-gaps for same-row items (label-content)
+    # Thresholds for different connection types (from config)
+    X_OVERLAP_MIN = cfg.connection.x_overlap_min
+    Y_OVERLAP_MIN = cfg.connection.y_overlap_min
+    VERTICAL_MULTIPLIER = cfg.connection.vertical_multiplier
+    SAME_ROW_X_MULTIPLIER = cfg.connection.same_row_x_multiplier
 
     # Check all pairs and union if they should be connected
     for i in range(n):
@@ -506,8 +521,8 @@ def detect_intra_cluster_outliers(cluster: Cluster) -> List[HarmonizedWord]:
     """
     Detect words that are outliers within a cluster.
 
-    A word is an outlier if its distance to neighbors exceeds 1.2x the
-    average intra-cluster distance.
+    A word is an outlier if its distance to neighbors exceeds the configured
+    multiplier times the average intra-cluster distance.
 
     Args:
         cluster: Cluster to analyze
@@ -517,6 +532,9 @@ def detect_intra_cluster_outliers(cluster: Cluster) -> List[HarmonizedWord]:
     """
     if len(cluster.words) < 3:
         return []
+
+    cfg = _get_gc_config()
+    outlier_mult = cfg.intra_cluster.outlier_multiplier
 
     # Sort words by reading order within cluster
     sorted_words = sorted(
@@ -541,8 +559,8 @@ def detect_intra_cluster_outliers(cluster: Cluster) -> List[HarmonizedWord]:
         return []
 
     # Calculate thresholds
-    x_thresh = np.mean([d for d, _ in x_distances]) * INTRA_CLUSTER_MULTIPLIER if x_distances else float('inf')
-    y_thresh = np.mean([d for d, _ in y_distances]) * INTRA_CLUSTER_MULTIPLIER if y_distances else float('inf')
+    x_thresh = np.mean([d for d, _ in x_distances]) * outlier_mult if x_distances else float('inf')
+    y_thresh = np.mean([d for d, _ in y_distances]) * outlier_mult if y_distances else float('inf')
 
     # Find gaps exceeding threshold
     outliers = set()
@@ -604,7 +622,7 @@ def reposition_outlier(outlier: HarmonizedWord, cluster: Cluster) -> str:
         return "end"
 
 
-def sort_words_within_cluster(cluster: Cluster, y_fuzz: float = DEFAULT_Y_FUZZ) -> List[HarmonizedWord]:
+def sort_words_within_cluster(cluster: Cluster, y_fuzz: float = None) -> List[HarmonizedWord]:
     """
     Sort words within a cluster by reading order.
 
@@ -621,6 +639,9 @@ def sort_words_within_cluster(cluster: Cluster, y_fuzz: float = DEFAULT_Y_FUZZ) 
     """
     if not cluster.words:
         return []
+
+    if y_fuzz is None:
+        y_fuzz = _get_gc_config().y_fuzz.default
 
     words = cluster.words.copy()
 

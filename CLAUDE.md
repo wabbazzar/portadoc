@@ -1,6 +1,6 @@
 # Portadoc
 
-PDF word extraction for document redaction. Extracts text with word-level bounding boxes using multi-engine OCR (Tesseract, EasyOCR, PaddleOCR, docTR, Surya) with smart harmonization.
+PDF word extraction for document redaction. Extracts text with word-level bounding boxes using multi-engine OCR (Tesseract, EasyOCR, PaddleOCR, docTR, Surya, Kraken) with smart harmonization.
 
 ## For Agents
 
@@ -131,7 +131,8 @@ make serve                   # Web UI at localhost:8000
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--primary ENGINE` | tesseract | Primary engine for bbox authority (tesseract/surya/doctr/easyocr/paddleocr) |
+| `--primary ENGINE` | tesseract | Primary engine for bbox authority (tesseract/surya/doctr/easyocr/paddleocr/kraken) |
+| `--use-kraken` | disabled | Enable Kraken OCR (historical/degraded docs) |
 | `--no-surya` | enabled | Disable Surya OCR |
 | `--no-easyocr` | enabled | Disable EasyOCR |
 | `--no-doctr` | enabled | Disable docTR |
@@ -177,7 +178,8 @@ src/portadoc/
 │   ├── surya_ocr.py    # SOTA accuracy (word-level, polygon)
 │   ├── doctr_ocr.py    # High accuracy (word-level)
 │   ├── easyocr.py      # Degraded docs (line-level)
-│   └── paddleocr.py    # General (word-level)
+│   ├── paddleocr.py    # General (word-level)
+│   └── kraken_ocr.py   # Historical/degraded (word from char cuts)
 └── web/
     ├── app.py          # Web UI routes
     └── static/         # Frontend (JS, CSS, HTML)
@@ -205,6 +207,7 @@ PDF → Image → [Preprocess] → [Super-res] → Multi-OCR → Harmonize → O
 | **docTR** | word-level | High text accuracy | Good secondary |
 | **EasyOCR** | line-level | Degraded docs | Needs word decomposition |
 | **PaddleOCR** | word-level | General | Has ~10px bbox offset |
+| **Kraken** | word-level (char cuts) | Historical/degraded | Word bbox from character positions |
 
 ---
 

@@ -7,14 +7,18 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0",
     "pdfjs-dist": "^4.8.69",
     "tesseract.js": "^5.1.1"
   },
   "devDependencies": {
     "typescript": "^5.7.3",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^1.0.0"
   }
 }

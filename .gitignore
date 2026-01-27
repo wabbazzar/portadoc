@@ -1,3 +1,8 @@
+# JS
+node_modules/
+dist/
+build/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -67,3 +72,12 @@ status.json
 # Extracted data files
 data/input/*_extracted.csv
 src/portadoc/browser/node_modules/
+
+# Test/dev data
+data/input/browser_*.csv
+data/input/*.jpg
+logs/
+sandbox/
+
+# Task files (local only)
+zero_task*.md

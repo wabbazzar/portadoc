@@ -19,10 +19,58 @@ export interface Word {
   confidence: number;
 }
 
+/**
+ * Details about what a single OCR engine contributed to harmonization.
+ */
+export interface HarmonizeContribution {
+  engine: string;
+  text: string;
+  confidence: number;
+  bbox?: BBox;  // Original bbox from this engine (if different from final)
+}
+
+/**
+ * Detailed information about how a word was harmonized from multiple engines.
+ */
+export interface HarmonizeDetails {
+  /** How the match was determined */
+  matchType: 'exact_text_iou' | 'iou_only' | 'center_distance' | 'unmatched';
+  /** IoU score if applicable */
+  iouScore?: number;
+  /** Whether the OCR engines agreed on the text */
+  textAgreed: boolean;
+  /** What each engine contributed */
+  contributions: HarmonizeContribution[];
+  /** Explanation of why the final text was chosen */
+  chosenTextReason: string;
+}
+
+/** Sanitization details for a word */
+export interface SanitizeDetails {
+  /** Original OCR text before sanitization */
+  originalText: string;
+  /** Status: skipped, preserved, corrected, context, uncertain */
+  status: string;
+  /** Edit distance from original to corrected */
+  editDistance: number;
+  /** Correction score (0-1) */
+  correctionScore: number;
+  /** Dictionary that matched */
+  matchedDictionary?: string;
+}
+
 export interface ExtractedWord extends Word {
   // Additional fields for harmonization
   matched?: boolean;
   sources?: string[];
+  /** Detailed harmonization info (when multiple engines contributed) */
+  harmonize?: HarmonizeDetails;
+  /** True if no OCR engine has confidence >= 80% for this word */
+  lowConfidence?: boolean;
+  /** True if text was sanitized (corrected via dictionary) */
+  sanitized?: boolean;
+  /** Detailed sanitization info */
+  sanitizeDetails?: SanitizeDetails;
 }
 
 export interface OcrResult {

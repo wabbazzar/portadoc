@@ -1,0 +1,57 @@
+{
+  "name": "Portadoc - PDF Word Extraction",
+  "short_name": "Portadoc",
+  "description": "PDF word extraction for document redaction with multi-engine OCR",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "categories": ["productivity", "utilities", "business"],
+  "icons": [
+    {
+      "src": "./public/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./public/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false,
+  "scope": "/",
+  "lang": "en",
+  "dir": "ltr",
+  "shortcuts": [
+    {
+      "name": "Open PDF",
+      "short_name": "Open",
+      "description": "Open a PDF file for word extraction",
+      "url": "/?action=open",
+      "icons": [
+        {
+          "src": "./public/icon-192.svg",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "share_target": {
+    "action": "/",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "file",
+          "accept": ["application/pdf", "image/*"]
+        }
+      ]
+    }
+  }
+}

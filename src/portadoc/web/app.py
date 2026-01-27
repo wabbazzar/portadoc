@@ -17,6 +17,24 @@ DEFAULT_OUTPUT_DIR = Path("data/output")
 router = APIRouter()
 
 
+class HarmonizeConfigOverride(BaseModel):
+    """Override harmonization settings."""
+    iou_threshold: Optional[float] = None
+    text_match_bonus: Optional[float] = None
+    center_distance_max: Optional[float] = None
+    word_min_conf: Optional[float] = None
+    low_conf_min_conf: Optional[float] = None
+
+
+class GeometricClusteringConfigOverride(BaseModel):
+    """Override geometric clustering settings."""
+    y_fuzz_default: Optional[float] = None
+    y_fuzz_multiplier: Optional[float] = None
+    y_fuzz_max_height_ratio: Optional[float] = None
+    x_overlap_min: Optional[float] = None
+    y_overlap_min: Optional[float] = None
+
+
 class ExtractionRequest(BaseModel):
     """Request body for extraction endpoint."""
     pdf_path: str
@@ -25,10 +43,14 @@ class ExtractionRequest(BaseModel):
     use_paddleocr: bool = True
     use_doctr: bool = True
     use_surya: bool = True
+    use_kraken: bool = False
     preprocess: str = "none"
     psm: int = 6
     oem: int = 3
     primary_engine: Optional[str] = None  # None = use config default
+    # Config overrides
+    harmonize: Optional[HarmonizeConfigOverride] = None
+    geometric_clustering: Optional[GeometricClusteringConfigOverride] = None
 
 
 class WordData(BaseModel):
@@ -49,6 +71,7 @@ class WordData(BaseModel):
     doctr_text: Optional[str] = None
     paddle_text: Optional[str] = None
     surya_text: Optional[str] = None
+    kraken_text: Optional[str] = None
 
 
 def get_output_path(pdf_path: Path) -> Path:
@@ -82,6 +105,7 @@ def load_words_from_csv(csv_path: Path) -> list[dict]:
                 "doctr_text": row.get("doctr", ""),
                 "paddle_text": row.get("paddle", ""),
                 "surya_text": row.get("surya", ""),
+                "kraken_text": row.get("kraken", ""),
             }
             words.append(word)
     return words
@@ -217,6 +241,7 @@ async def extract_pdf(request: ExtractionRequest):
     """Run extraction on a PDF with specified settings."""
     from ..extractor import extract_words
     from ..output import write_harmonized_csv
+    from ..config import apply_config_overrides
 
     pdf_path = Path(request.pdf_path)
     if not pdf_path.exists():
@@ -228,6 +253,28 @@ async def extract_pdf(request: ExtractionRequest):
     output_path = get_output_path(pdf_path)
 
     try:
+        # Apply config overrides if provided
+        overrides = {}
+        if request.harmonize:
+            overrides["harmonize"] = {
+                "iou_threshold": request.harmonize.iou_threshold,
+                "text_match_bonus": request.harmonize.text_match_bonus,
+                "center_distance_max": request.harmonize.center_distance_max,
+                "word_min_conf": request.harmonize.word_min_conf,
+                "low_conf_min_conf": request.harmonize.low_conf_min_conf,
+            }
+        if request.geometric_clustering:
+            overrides["geometric_clustering"] = {
+                "y_fuzz_default": request.geometric_clustering.y_fuzz_default,
+                "y_fuzz_multiplier": request.geometric_clustering.y_fuzz_multiplier,
+                "y_fuzz_max_height_ratio": request.geometric_clustering.y_fuzz_max_height_ratio,
+                "x_overlap_min": request.geometric_clustering.x_overlap_min,
+                "y_overlap_min": request.geometric_clustering.y_overlap_min,
+            }
+
+        if overrides:
+            apply_config_overrides(overrides)
+
         # Run extraction
         harmonized_words = extract_words(
             pdf_path=pdf_path,
@@ -237,6 +284,7 @@ async def extract_pdf(request: ExtractionRequest):
             use_paddleocr=request.use_paddleocr,
             use_doctr=request.use_doctr,
             use_surya=request.use_surya,
+            use_kraken=request.use_kraken,
             preprocess=request.preprocess,
             tesseract_psm=request.psm,
             tesseract_oem=request.oem,
@@ -298,16 +346,30 @@ async def get_reading_order(filename: str, page: int = Query(0, ge=0)):
 
 @router.get("/api/config")
 async def get_current_config():
-    """Get current configuration values."""
-    from ..config import get_config
+    """Get current configuration values and UI descriptions."""
+    from ..config import get_config, get_ui_descriptions
 
     config = get_config()
+    ui_descriptions = get_ui_descriptions()
 
     return {
         "harmonize": {
             "iou_threshold": config.harmonize.iou_threshold,
             "text_match_bonus": config.harmonize.text_match_bonus,
             "center_distance_max": config.harmonize.center_distance_max,
+            "word_min_conf": config.harmonize.status.word_min_conf,
+            "low_conf_min_conf": config.harmonize.status.low_conf_min_conf,
+        },
+        "geometric_clustering": {
+            "y_fuzz": {
+                "default": config.geometric_clustering.y_fuzz.default,
+                "multiplier": config.geometric_clustering.y_fuzz.multiplier,
+                "max_height_ratio": config.geometric_clustering.y_fuzz.max_height_ratio,
+            },
+            "connection": {
+                "x_overlap_min": config.geometric_clustering.connection.x_overlap_min,
+                "y_overlap_min": config.geometric_clustering.connection.y_overlap_min,
+            },
         },
         "ocr": {
             "tesseract": {
@@ -322,6 +384,7 @@ async def get_current_config():
             "doctr": config.harmonize.secondary.engines.get("doctr", {}).enabled if hasattr(config.harmonize.secondary.engines.get("doctr", {}), 'enabled') else True,
             "surya": config.harmonize.secondary.engines.get("surya", {}).enabled if hasattr(config.harmonize.secondary.engines.get("surya", {}), 'enabled') else True
         },
+        "ui_descriptions": ui_descriptions,
     }
 
 

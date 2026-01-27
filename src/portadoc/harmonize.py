@@ -540,6 +540,7 @@ def harmonize(
         "doctr": "D",
         "paddleocr": "P",
         "surya": "S",
+        "kraken": "K",
     }
     primary_code = ENGINE_CODES.get(primary_engine, primary_engine[0].upper())
 
@@ -566,6 +567,8 @@ def harmonize(
             hw.paddle_text = primary.text
         elif primary_engine == "surya":
             hw.surya_text = primary.text
+        elif primary_engine == "kraken":
+            hw.kraken_text = primary.text
 
         # Collect text votes from all engines
         votes: list[tuple[str, str, float]] = [
@@ -627,6 +630,8 @@ def harmonize(
                     hw.paddle_text = match.text
                 elif engine == "surya" and not hw.surya_text:
                     hw.surya_text = match.text
+                elif engine == "kraken" and not hw.kraken_text:
+                    hw.kraken_text = match.text
 
         # Vote on final text
         hw.text = weighted_vote(votes, config, known_words)
@@ -643,6 +648,8 @@ def harmonize(
             hw.dist_paddle = levenshtein_distance(hw.paddle_text.lower(), final_lower)
         if hw.surya_text:
             hw.dist_surya = levenshtein_distance(hw.surya_text.lower(), final_lower)
+        if hw.kraken_text:
+            hw.dist_kraken = levenshtein_distance(hw.kraken_text.lower(), final_lower)
 
         # Determine status by max confidence
         max_conf = max(v[2] for v in votes) if votes else 0

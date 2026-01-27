@@ -91,6 +91,7 @@ class HarmonizedWord:
     doctr_text: str = ""
     paddle_text: str = ""
     surya_text: str = ""
+    kraken_text: str = ""
 
     # Levenshtein distances to final text (-1 if engine didn't detect)
     dist_tess: int = -1
@@ -98,6 +99,7 @@ class HarmonizedWord:
     dist_doctr: int = -1
     dist_paddle: int = -1
     dist_surya: int = -1
+    dist_kraken: int = -1
 
     def to_word(self) -> Word:
         """Convert to basic Word for backwards compatibility."""

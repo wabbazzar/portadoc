@@ -1,0 +1,33 @@
+{
+  "ocr": {
+    "doctr": {
+      "confidenceAdjustment": -10
+    },
+    "tesseract": {
+      "confidenceAdjustment": 0
+    }
+  },
+  "harmonize": {
+    "iouThreshold": 0.3,
+    "textMatchBonus": 0.15,
+    "centerDistanceMax": 12.0,
+    "yBandTolerance": 10.0
+  },
+  "pixelDetection": {
+    "textRegion": {
+      "minAreaPts": 50,
+      "minWidthPts": 10,
+      "minHeightPts": 5,
+      "maxHeightPts": 50,
+      "maxAspectRatio": 50,
+      "dilateKernelSize": 3,
+      "dilateIterations": 2
+    },
+    "logo": {
+      "minAreaPts": 1000,
+      "minDimensionPts": 30,
+      "maxAspectRatio": 20
+    },
+    "binaryThreshold": 200
+  }
+}

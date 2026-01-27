@@ -10,6 +10,7 @@ from .ocr.easyocr import extract_words_easyocr, is_easyocr_available
 from .ocr.paddleocr import extract_words_paddleocr, is_paddleocr_available
 from .ocr.doctr_ocr import extract_words_doctr, is_doctr_available
 from .ocr.surya_ocr import extract_words_surya, is_surya_available
+from .ocr.kraken_ocr import extract_words_kraken, is_kraken_available
 from .detection import detect_missed_content
 from .harmonize import harmonize
 from .preprocess import PreprocessLevel, preprocess_for_ocr, auto_detect_quality
@@ -28,6 +29,7 @@ def extract_words(
     use_paddleocr: bool = False,
     use_doctr: bool = False,
     use_surya: bool = True,
+    use_kraken: bool = False,
     use_pixel_detection: bool = True,
     gpu: bool = False,
     preprocess: Optional[str] = "auto",
@@ -58,6 +60,7 @@ def extract_words(
         use_paddleocr: Whether to use PaddleOCR (default: False)
         use_doctr: Whether to use docTR OCR (default: False)
         use_surya: Whether to use Surya OCR (default: True)
+        use_kraken: Whether to use Kraken OCR (default: False)
         use_pixel_detection: Whether to use pixel detection fallback
         gpu: Whether to use GPU for EasyOCR/PaddleOCR (default: False)
         preprocess: Preprocessing level - "none", "light", "standard", "aggressive", or "auto"
@@ -94,6 +97,7 @@ def extract_words(
     paddleocr_ok = is_paddleocr_available() if use_paddleocr else False
     doctr_ok = is_doctr_available() if use_doctr else False
     surya_ok = is_surya_available() if use_surya else False
+    kraken_ok = is_kraken_available() if use_kraken else False
 
     # Map engine names to availability
     engine_available = {
@@ -102,6 +106,7 @@ def extract_words(
         "paddleocr": paddleocr_ok,
         "doctr": doctr_ok,
         "surya": surya_ok,
+        "kraken": kraken_ok,
     }
 
     # Validate primary engine is available
@@ -185,6 +190,11 @@ def extract_words(
                     ocr_image, page_num, page_width, page_height
                 )
 
+            if kraken_ok:
+                all_engine_results["kraken"] = extract_words_kraken(
+                    ocr_image, page_num, page_width, page_height
+                )
+
             # Split into primary and secondary based on config
             primary_words = all_engine_results.get(primary, [])
             secondary_results: dict[str, list[Word]] = {
@@ -250,6 +260,7 @@ def extract_document(
     use_paddleocr: bool = False,
     use_doctr: bool = False,
     use_surya: bool = True,
+    use_kraken: bool = False,
     use_pixel_detection: bool = True,
     gpu: bool = False,
     preprocess: Optional[str] = "auto",
@@ -281,6 +292,7 @@ def extract_document(
         use_paddleocr: Whether to use PaddleOCR (default: False)
         use_doctr: Whether to use docTR OCR (default: False)
         use_surya: Whether to use Surya OCR (default: False)
+        use_kraken: Whether to use Kraken OCR (default: False)
         use_pixel_detection: Whether to use pixel detection fallback
         gpu: Whether to use GPU for EasyOCR/PaddleOCR (default: False)
         preprocess: Preprocessing level - "none", "light", "standard", "aggressive", or "auto"
@@ -309,6 +321,7 @@ def extract_document(
         use_paddleocr=use_paddleocr,
         use_doctr=use_doctr,
         use_surya=use_surya,
+        use_kraken=use_kraken,
         use_pixel_detection=use_pixel_detection,
         gpu=gpu,
         preprocess=preprocess,

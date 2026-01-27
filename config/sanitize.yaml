@@ -1,0 +1,138 @@
+# OCR Text Sanitization Configuration
+# See specs/sanitize.md for full documentation
+
+sanitize:
+  enabled: true
+
+  # Phase 0: Skip rules
+  skip:
+    pixel_detector: true
+    single_char_max_conf: 50
+
+  # Phase 1: Preserve rules (don't modify these words)
+  preserve:
+    confidence_threshold: 100      # Don't touch 100% confidence words
+    numeric_ratio: 0.5             # >50% digits = preserve
+    exact_match_dictionaries:
+      - english
+      - names
+      - medical
+      - custom
+
+  # Phase 2: Single-word correction
+  correct:
+    algorithm: symspell
+    max_edit_distance: 2
+    min_correction_score: 0.3
+    case_sensitive: false
+    dictionary_weights:
+      english: 1.0
+      names: 0.9
+      medical: 1.2
+      custom: 1.5
+
+  # Phase 3: Context-based correction
+  context:
+    enabled: true
+    ngram_window: 2
+    min_context_score: 0.2
+    max_edit_distance: 3
+
+  # Phase 4: Flagging uncertain words
+  flag:
+    mark_uncertain: true
+    preserve_original: true
+
+  # Multi-signal ranking for correction candidates
+  ranking:
+    # Phase 1: Word frequency
+    frequency:
+      enabled: true
+      weight: 1.0
+      source: "data/frequencies/english_freq.txt"
+      fallback_frequency: 1
+
+    # Phase 2: Document frequency
+    document:
+      enabled: true
+      weight: 0.3
+      min_occurrences: 2
+
+    # Phase 3: Bigram context
+    bigram:
+      enabled: true
+      weight: 0.5
+      source: "data/bigrams/english_bigrams.txt"
+      window: 1
+
+    # Phase 4: OCR error model
+    ocr_model:
+      enabled: true
+      weight: 0.4
+      source: "data/ocr_confusions.yaml"
+
+# Dictionary sources
+dictionaries:
+  english:
+    path: data/dictionaries/english_words.txt
+    format: wordlist
+    min_word_length: 2
+
+  names:
+    path: data/dictionaries/us_names.txt
+    format: frequency
+    min_frequency: 100
+
+  medical:
+    path: data/dictionaries/medical_terms.txt
+    format: wordlist
+
+  custom:
+    path: data/dictionaries/custom.txt
+    format: wordlist
+
+# Grid search configuration (for Ralph optimization)
+grid_search:
+  # Parameters to optimize
+  parameters:
+    preserve.confidence_threshold:
+      values: [95, 98, 100]
+      description: "Minimum OCR confidence to preserve without checking"
+
+    preserve.numeric_ratio:
+      values: [0.4, 0.5, 0.6]
+      description: "Minimum digit ratio to treat as numeric/preserve"
+
+    correct.max_edit_distance:
+      values: [1, 2, 3]
+      description: "Maximum Levenshtein distance for corrections"
+
+    correct.min_correction_score:
+      values: [0.5, 0.6, 0.7, 0.8]
+      description: "Minimum score threshold to apply correction"
+
+    context.enabled:
+      values: [true, false]
+      description: "Enable context-based multi-word correction"
+
+    context.ngram_window:
+      values: [1, 2, 3]
+      description: "Number of adjacent words for context"
+
+    context.min_context_score:
+      values: [0.5, 0.6, 0.7]
+      description: "Minimum context score for correction"
+
+  # Optimization settings
+  metric: f1_score
+  early_stopping:
+    enabled: true
+    min_improvement: 0.005        # Stop if <0.5% improvement
+
+  # Test data
+  ground_truth: data/input/peter_lou_words_slim.csv
+  test_input: data/input/peter_lou_50dpi.pdf
+
+  # Output
+  results_dir: results/sanitize_optimization
+  save_top_n: 10

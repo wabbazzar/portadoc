@@ -2,73 +2,215 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Portadoc">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="description" content="PDF word extraction for document redaction">
   <title>Portadoc Browser</title>
   <link rel="stylesheet" href="./styles.css">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/svg+xml" href="./public/icon-192.svg">
+  <link rel="apple-touch-icon" href="./public/icon-192.svg">
 </head>
 <body>
-  <div id="app">
-    <header>
-      <h1>Portadoc Browser</h1>
-      <p>Client-side PDF word extraction with OCR</p>
-    </header>
+  <header>
+    <!-- Row 1: Title, filename, and file button -->
+    <div class="header-row">
+      <div class="header-title-row">
+        <h1>Portadoc</h1>
+        <span class="filename" id="filename"></span>
+      </div>
+      <label class="file-upload-btn" id="drop-zone">
+        <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg" hidden />
+        Open File
+      </label>
+    </div>
+    <!-- Row 2: Engine toggles, extract button, page controls -->
+    <div class="header-row">
+      <div id="engine-controls" class="engine-strip">
+        <label title="Use Tesseract.js OCR">
+          <input type="checkbox" id="use-tesseract" checked />
+          <span class="engine-badge tesseract">T</span>
+        </label>
+        <label title="Use docTR OCR">
+          <input type="checkbox" id="use-doctr" checked />
+          <span class="engine-badge doctr">D</span>
+        </label>
+        <label title="Pixel Detection (logos, lines)">
+          <input type="checkbox" id="use-pixel" checked />
+          <span class="engine-badge pixel">PX</span>
+        </label>
+        <label title="Sanitize OCR text">
+          <input type="checkbox" id="use-sanitize" checked />
+          <span class="engine-badge sanitized">S</span>
+        </label>
+      </div>
+      <button id="extract-btn" class="primary" disabled>Extract</button>
+      <div id="page-controls" class="hidden">
+        <button id="prev-page" disabled>&lt;</button>
+        <span id="page-info">1/1</span>
+        <button id="next-page" disabled>&gt;</button>
+      </div>
+    </div>
+  </header>
 
-    <main>
-      <section id="upload-section">
-        <div id="drop-zone">
-          <p>Drop PDF or image here, or click to select</p>
-          <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg" />
+  <main>
+    <!-- Empty State -->
+    <section id="empty-state">
+      <div class="empty-content">
+        <div class="drop-target" id="drop-target">
+          <div class="drop-icon">📄</div>
+          <p>Drop PDF or image here</p>
+          <span>or click "Open File" above</span>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <section id="controls-section" class="hidden">
-        <div id="engine-controls">
-          <label>
-            <input type="checkbox" id="use-tesseract" checked />
-            Tesseract.js
-          </label>
-          <label>
-            <input type="checkbox" id="use-doctr" checked />
-            docTR
-          </label>
-        </div>
-        <div id="page-controls">
-          <button id="prev-page" disabled>&larr; Prev</button>
-          <span id="page-info">Page 1 of 1</span>
-          <button id="next-page" disabled>Next &rarr;</button>
-        </div>
-        <button id="extract-btn" class="primary">Extract Words</button>
-      </section>
-
-      <section id="progress-section" class="hidden">
+    <!-- Progress Overlay -->
+    <div id="progress-overlay" class="hidden">
+      <div class="progress-content">
         <div id="progress-bar">
           <div id="progress-fill"></div>
         </div>
         <p id="progress-text">Loading...</p>
-      </section>
+      </div>
+    </div>
 
-      <section id="viewer-section" class="hidden">
-        <div id="canvas-container">
+    <!-- PDF Viewer -->
+    <section id="pdf-viewer" class="hidden">
+      <div id="pdf-container">
+        <div class="canvas-container">
           <canvas id="pdf-canvas"></canvas>
           <div id="bbox-overlay"></div>
         </div>
-        <div id="words-panel">
-          <div id="words-header">
-            <h3>Extracted Words</h3>
-            <span id="word-count">0 words</span>
-          </div>
-          <div id="words-list"></div>
-          <div id="export-controls">
-            <button id="export-csv">Export CSV</button>
-            <button id="export-json">Export JSON</button>
+      </div>
+    </section>
+
+    <!-- Panel Resizer -->
+    <div id="panel-resizer" class="hidden"></div>
+
+    <!-- Side Panel -->
+    <aside id="side-panel" class="hidden">
+      <!-- Pull Handle for Mobile Bottom Sheet -->
+      <div class="panel-pull-handle" id="panel-pull-handle"></div>
+      <!-- Words Panel -->
+      <div id="words-panel">
+        <div class="panel-header">
+          <h3>Words <span id="word-count">(0)</span></h3>
+          <div class="filter-controls">
+            <div class="filter-group sources" title="Source visibility">
+              <label title="Show Tesseract">
+                <input type="checkbox" id="show-tesseract" checked />
+                <span class="engine-badge tesseract">T</span>
+              </label>
+              <label title="Show docTR">
+                <input type="checkbox" id="show-doctr" checked />
+                <span class="engine-badge doctr">D</span>
+              </label>
+              <label title="Show Pixel Detection">
+                <input type="checkbox" id="show-pixel" checked />
+                <span class="engine-badge pixel">PX</span>
+              </label>
+            </div>
+            <span class="filter-divider"></span>
+            <div class="filter-group highlights" title="Highlight alterations">
+              <label title="Highlight sanitized words">
+                <input type="checkbox" id="highlight-sanitized" />
+                <span class="engine-badge sanitized">S</span>
+              </label>
+              <label title="Highlight harmonized words">
+                <input type="checkbox" id="highlight-harmonized" />
+                <span class="engine-badge harmonized">H</span>
+              </label>
+            </div>
+            <span class="filter-divider"></span>
+            <label title="Show Reading Order Clusters">
+              <input type="checkbox" id="show-clusters" />
+              <span class="engine-badge cluster">C</span>
+            </label>
           </div>
         </div>
-      </section>
-    </main>
 
-    <footer>
-      <p>Powered by Tesseract.js and docTR-TFJS</p>
-    </footer>
+        <!-- Ranking Settings (Collapsible) -->
+        <details id="ranking-settings" class="panel-section">
+          <summary>Ranking Settings</summary>
+          <div class="ranking-controls">
+            <div class="ranking-signal">
+              <label>
+                <input type="checkbox" id="ranking-frequency" checked />
+                Word Frequency
+              </label>
+              <input type="range" id="ranking-frequency-weight" min="0" max="2" step="0.1" value="1.0" />
+              <span class="weight-value">1.0</span>
+            </div>
+            <div class="ranking-signal">
+              <label>
+                <input type="checkbox" id="ranking-document" checked />
+                Document Context
+              </label>
+              <input type="range" id="ranking-document-weight" min="0" max="2" step="0.1" value="0.3" />
+              <span class="weight-value">0.3</span>
+            </div>
+            <div class="ranking-signal">
+              <label>
+                <input type="checkbox" id="ranking-bigram" checked />
+                Bigram Patterns
+              </label>
+              <input type="range" id="ranking-bigram-weight" min="0" max="2" step="0.1" value="0.5" />
+              <span class="weight-value">0.5</span>
+            </div>
+            <div class="ranking-signal">
+              <label>
+                <input type="checkbox" id="ranking-ocr" checked />
+                OCR Error Model
+              </label>
+              <input type="range" id="ranking-ocr-weight" min="0" max="2" step="0.1" value="0.4" />
+              <span class="weight-value">0.4</span>
+            </div>
+          </div>
+        </details>
+
+        <div id="words-list"></div>
+        <div id="export-controls">
+          <button id="export-csv">CSV</button>
+          <button id="export-json">JSON</button>
+        </div>
+      </div>
+
+      <!-- Horizontal Resizer -->
+      <div id="horizontal-resizer"></div>
+
+      <!-- Reading Order Panel -->
+      <div id="reading-order-panel">
+        <div class="panel-header">
+          <h3>Reading Order <span id="line-count">(0)</span></h3>
+        </div>
+        <div id="reading-order-content">
+          <p class="empty-state">Extract words to see reading order</p>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Tooltip for word hover -->
+  <div id="tooltip" class="hidden"></div>
+
+  <!-- Tooltip for cluster hover (richer info) -->
+  <div id="cluster-tooltip" class="hidden"></div>
+
+  <!-- Word Details Modal -->
+  <div id="word-details-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Word Details</h3>
+        <button id="close-details">&times;</button>
+      </div>
+      <div id="word-details-body"></div>
+    </div>
   </div>
 
   <script type="module" src="./app.ts"></script>

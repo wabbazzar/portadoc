@@ -1,0 +1,96 @@
+# Medical/Veterinary terminology
+# Common terms that should be preserved or matched
+
+# Conditions
+FLUTD
+obesity
+diarrhea
+vomiting
+lethargy
+anorexia
+urinary
+dental
+disease
+diagnosis
+diagnosed
+
+# Medications
+Gabapentin
+Mirataz
+mirtazapine
+Clavamox
+amoxicillin
+antibiotic
+transdermal
+prescription
+
+# Procedures
+urinalysis
+radiograph
+radiographs
+ultrasound
+castration
+extraction
+cleaning
+exam
+examination
+surgery
+surgical
+
+# Measurements
+temperature
+pulse
+respiration
+heartrate
+bloodpressure
+weight
+bpm
+
+# Dosing
+PO
+PRN
+SID
+BID
+TID
+QID
+q4h
+q6h
+q8h
+q12h
+q24h
+mg
+mcg
+ml
+cc
+
+# Body parts
+urinary
+tract
+premolar
+molar
+incisor
+canine
+abdomen
+abdominal
+
+# Titles
+DVM
+VMD
+RVT
+CVT
+LVT
+
+# Patient status
+neutered
+spayed
+intact
+microchip
+vaccination
+vaccinated
+
+# Anatomy
+feline
+canine
+equine
+bovine
+avian

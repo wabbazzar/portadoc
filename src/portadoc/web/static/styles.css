@@ -148,7 +148,7 @@ body.resizing * {
 
 /* Config Panel - now inline, pushes content */
 #config-panel {
-    width: 280px;
+    width: 320px;
     background: var(--bg-secondary);
     border-radius: 8px;
     padding: 1rem;
@@ -165,31 +165,182 @@ body.resizing * {
 #config-panel h3 {
     margin-bottom: 1rem;
     color: var(--accent);
+    font-size: 1rem;
 }
 
-.config-group {
-    margin-bottom: 1rem;
+/* Config Section Collapsible */
+.config-section {
+    margin-bottom: 0.75rem;
+    background: var(--bg-panel);
+    border-radius: 6px;
+    overflow: hidden;
 }
 
-.config-group label {
-    display: block;
-    margin-bottom: 0.5rem;
+.config-section summary {
+    padding: 0.6rem 0.85rem;
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: var(--bg-panel);
+    transition: background 0.2s;
+    list-style: none;
+    font-size: 0.9rem;
 }
 
-.config-group input[type="number"] {
-    width: 60px;
-    margin-left: 0.5rem;
+.config-section summary::-webkit-details-marker {
+    display: none;
 }
 
-.config-group select {
-    width: 100%;
-    margin-top: 0.25rem;
+.config-section summary::before {
+    content: '▶ ';
+    font-size: 0.65rem;
+    margin-right: 0.4rem;
+    color: var(--text-secondary);
+    transition: transform 0.2s;
+    display: inline-block;
+}
+
+.config-section[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.config-section summary:hover {
+    background: var(--bg-secondary);
+}
+
+/* Config Form Row - grid layout for alignment */
+.config-form-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.85rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    position: relative;
+}
+
+.config-form-row:last-child {
+    border-bottom: none;
+}
+
+.config-form-row:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.config-form-row label {
+    font-size: 0.82rem;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: help;
+}
+
+.config-form-row label .help-icon {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.config-form-row:hover label .help-icon {
+    opacity: 1;
+    color: var(--accent);
+}
+
+.config-form-row input[type="number"] {
+    width: 80px;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.82rem;
+    text-align: right;
+}
+
+.config-form-row select {
+    width: 120px;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.82rem;
+}
+
+/* Engine checkbox grid */
+.config-engines-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem 0.75rem;
+    padding: 0.5rem 0.85rem;
+}
+
+.config-engines-grid label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 0.25rem 0;
+}
+
+.config-engines-grid label:hover {
+    color: var(--accent);
+}
+
+.config-engines-grid input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+}
+
+/* Section divider within config */
+.config-section-divider {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.6rem 0.85rem 0.3rem;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+/* Tooltip for config settings */
+.config-tooltip {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    padding: 0.6rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    z-index: 100;
+    margin-top: 4px;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.15s, transform 0.15s;
+    border: 1px solid var(--bg-panel);
+}
+
+.config-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 20px;
+    border: 6px solid transparent;
+    border-bottom-color: var(--bg-primary);
+}
+
+.config-form-row:hover .config-tooltip,
+.config-engines-grid label:hover .config-tooltip {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 #apply-extract-btn {
     width: 100%;
     background: var(--accent);
     margin-top: 1rem;
+    font-weight: 500;
 }
 
 /* Modal styles */

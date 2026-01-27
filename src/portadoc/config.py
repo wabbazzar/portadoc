@@ -132,12 +132,53 @@ class PageAlignmentConfig:
 
 
 @dataclass
+class YFuzzConfig:
+    """Y-fuzz settings for row detection."""
+    default: float = 5.0  # Default y-fuzz when estimation fails
+    multiplier: float = 2.0  # Multiplier on std for y-fuzz calculation
+    max_height_ratio: float = 0.25  # Cap y-fuzz at this fraction of avg line height
+
+
+@dataclass
+class ClusteringThresholdsConfig:
+    """Distance thresholds for clustering."""
+    default_x: float = 50.0  # Default x-threshold when calculation fails
+    default_y: float = 20.0  # Default y-threshold when calculation fails
+    q1_multiplier: float = 1.5  # Multiplier on Q1 for gap detection
+
+
+@dataclass
+class IntraClusterConfig:
+    """Intra-cluster settings."""
+    outlier_multiplier: float = 1.2  # Distance multiplier for outlier detection
+
+
+@dataclass
+class ConnectionConfig:
+    """Connection rules for clustering."""
+    x_overlap_min: float = 0.30  # Min x-overlap for column alignment
+    y_overlap_min: float = 0.50  # Min y-overlap for same-row detection
+    vertical_multiplier: float = 3.0  # Allow larger y-gaps for column-aligned words
+    same_row_x_multiplier: float = 8.0  # Allow larger x-gaps for same-row items
+
+
+@dataclass
+class GeometricClusteringConfig:
+    """Geometric clustering configuration for reading order."""
+    y_fuzz: YFuzzConfig = field(default_factory=YFuzzConfig)
+    thresholds: ClusteringThresholdsConfig = field(default_factory=ClusteringThresholdsConfig)
+    intra_cluster: IntraClusterConfig = field(default_factory=IntraClusterConfig)
+    connection: ConnectionConfig = field(default_factory=ConnectionConfig)
+
+
+@dataclass
 class PortadocConfig:
     """Root configuration object."""
     harmonize: HarmonizeConfig = field(default_factory=HarmonizeConfig)
     ocr: OCRConfig = field(default_factory=OCRConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     page_alignment: PageAlignmentConfig = field(default_factory=PageAlignmentConfig)
+    geometric_clustering: GeometricClusteringConfig = field(default_factory=GeometricClusteringConfig)
 
 
 def _parse_engine_config(data: dict) -> EngineConfig:
@@ -272,6 +313,37 @@ def _parse_config(data: dict) -> PortadocConfig:
         config.page_alignment.angles = pa.get("angles", [90, 180, 270])
         config.page_alignment.surya_fallback_threshold = pa.get("surya_fallback_threshold", 0.05)
 
+    # Parse geometric_clustering section
+    if "geometric_clustering" in data:
+        gc = data["geometric_clustering"]
+
+        # Y-fuzz settings
+        if "y_fuzz" in gc:
+            yf = gc["y_fuzz"]
+            config.geometric_clustering.y_fuzz.default = yf.get("default", 5.0)
+            config.geometric_clustering.y_fuzz.multiplier = yf.get("multiplier", 2.0)
+            config.geometric_clustering.y_fuzz.max_height_ratio = yf.get("max_height_ratio", 0.25)
+
+        # Thresholds
+        if "thresholds" in gc:
+            th = gc["thresholds"]
+            config.geometric_clustering.thresholds.default_x = th.get("default_x", 50.0)
+            config.geometric_clustering.thresholds.default_y = th.get("default_y", 20.0)
+            config.geometric_clustering.thresholds.q1_multiplier = th.get("q1_multiplier", 1.5)
+
+        # Intra-cluster
+        if "intra_cluster" in gc:
+            ic = gc["intra_cluster"]
+            config.geometric_clustering.intra_cluster.outlier_multiplier = ic.get("outlier_multiplier", 1.2)
+
+        # Connection rules
+        if "connection" in gc:
+            cn = gc["connection"]
+            config.geometric_clustering.connection.x_overlap_min = cn.get("x_overlap_min", 0.30)
+            config.geometric_clustering.connection.y_overlap_min = cn.get("y_overlap_min", 0.50)
+            config.geometric_clustering.connection.vertical_multiplier = cn.get("vertical_multiplier", 3.0)
+            config.geometric_clustering.connection.same_row_x_multiplier = cn.get("same_row_x_multiplier", 8.0)
+
     return config
 
 
@@ -293,3 +365,87 @@ def get_config(config_path: Optional[Path | str] = None) -> PortadocConfig:
     if _config is None or config_path is not None:
         _config = load_config(config_path)
     return _config
+
+
+def apply_config_overrides(overrides: dict) -> None:
+    """
+    Apply runtime overrides to the global config instance.
+
+    This modifies the global config in-place. Use for runtime adjustments
+    from the web UI.
+
+    Args:
+        overrides: Dict with override values. Supported keys:
+            - harmonize.iou_threshold
+            - harmonize.text_match_bonus
+            - harmonize.center_distance_max
+            - harmonize.word_min_conf
+            - harmonize.low_conf_min_conf
+            - geometric_clustering.y_fuzz.default
+            - geometric_clustering.y_fuzz.multiplier
+            - geometric_clustering.y_fuzz.max_height_ratio
+            - geometric_clustering.connection.x_overlap_min
+            - geometric_clustering.connection.y_overlap_min
+    """
+    config = get_config()
+
+    # Harmonization overrides
+    if "harmonize" in overrides:
+        h = overrides["harmonize"]
+        if h.get("iou_threshold") is not None:
+            config.harmonize.iou_threshold = h["iou_threshold"]
+        if h.get("text_match_bonus") is not None:
+            config.harmonize.text_match_bonus = h["text_match_bonus"]
+        if h.get("center_distance_max") is not None:
+            config.harmonize.center_distance_max = h["center_distance_max"]
+        if h.get("word_min_conf") is not None:
+            config.harmonize.status.word_min_conf = h["word_min_conf"]
+        if h.get("low_conf_min_conf") is not None:
+            config.harmonize.status.low_conf_min_conf = h["low_conf_min_conf"]
+
+    # Geometric clustering overrides
+    if "geometric_clustering" in overrides:
+        gc = overrides["geometric_clustering"]
+        if gc.get("y_fuzz_default") is not None:
+            config.geometric_clustering.y_fuzz.default = gc["y_fuzz_default"]
+        if gc.get("y_fuzz_multiplier") is not None:
+            config.geometric_clustering.y_fuzz.multiplier = gc["y_fuzz_multiplier"]
+        if gc.get("y_fuzz_max_height_ratio") is not None:
+            config.geometric_clustering.y_fuzz.max_height_ratio = gc["y_fuzz_max_height_ratio"]
+        if gc.get("x_overlap_min") is not None:
+            config.geometric_clustering.connection.x_overlap_min = gc["x_overlap_min"]
+        if gc.get("y_overlap_min") is not None:
+            config.geometric_clustering.connection.y_overlap_min = gc["y_overlap_min"]
+
+
+def reset_config() -> None:
+    """Reset the global config to reload from file on next get_config() call."""
+    global _config
+    _config = None
+
+
+def get_ui_descriptions(config_path: Optional[Path | str] = None) -> dict:
+    """
+    Get UI descriptions for config settings (used for tooltips in web UI).
+
+    Args:
+        config_path: Path to config file. If None, uses default config/harmonize.yaml
+
+    Returns:
+        Dict with ui_descriptions from the config file
+    """
+    if config_path is None:
+        default_path = Path(__file__).parent.parent.parent / "config" / "harmonize.yaml"
+        if default_path.exists():
+            config_path = default_path
+        else:
+            return {}
+
+    config_path = Path(config_path)
+    if not config_path.exists():
+        return {}
+
+    with open(config_path) as f:
+        data = yaml.safe_load(f) or {}
+
+    return data.get("ui_descriptions", {})

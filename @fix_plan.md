@@ -1,88 +1,102 @@
-# Fix Plan - Browser-Based Portadoc Client
+# Sanitization OCR Correction Improvement
 
-## Phase 1: Project Setup
-- [x] Create `src/portadoc/browser/` directory structure
-- [x] Set up TypeScript build with Vite
-- [x] Create `index.html` with basic layout
-- [x] Add npm dependencies: pdfjs-dist, tesseract.js
+## Objective
+Improve the OCR text sanitization to correct degraded OCR output. The sanitizer should correct common OCR errors (1-3 edit distance) while preserving valid words.
 
-## Phase 2: PDF Loading
-- [x] Implement `pdf-loader.ts` with PDF.js
-- [x] Convert PDF pages to canvas/ImageData
-- [x] Add page navigation UI
-- [x] Handle multi-page PDFs
+## Validation Command
+```bash
+make sanitize-test
+```
 
-## Phase 3: Tesseract.js Integration
-- [x] Implement `ocr/tesseract.ts` wrapper
-- [x] Load Tesseract worker and language data
-- [x] Extract words with bounding boxes
-- [x] Add progress callback for UI
+## Success Criteria
+- All tests in `tests/test_sanitize_correction.py` pass
+- Ground truth coverage > 85%
+- No over-correction of valid words (don't change "Cars" to something else)
 
-## Phase 4: docTR-TFJS Integration
-- [ ] Clone/adapt models from doctr-tfjs-demo
-- [ ] Implement `ocr/doctr.ts` wrapper
-- [ ] Load detection model (db_mobilenet_v2)
-- [ ] Load recognition model (crnn_vgg16_bn)
-- [ ] Extract words with bounding boxes
-- [ ] Add progress callback for UI
+## Test Data
+- Ground truth: `data/input/peter_lou_words_slim.csv` (401 words)
+- Degraded OCR input examples below
 
-## Phase 5: Reading Order and Harmonization
-- [x] Port `Word` and `BBox` interfaces to `models.ts`
-- [x] Port geometric clustering algorithm from `src/portadoc/geometric_clustering.py`:
-  - [x] Union-Find data structure
-  - [x] `calculate_distance_thresholds()` - Q1-based threshold calculation
-  - [x] `detect_column_boundaries()` - row-based gap analysis
-  - [x] `build_clusters()` - spatial proximity clustering
-  - [x] `sort_words_within_cluster()` - y-fuzz row grouping
-  - [x] `group_clusters_into_row_bands()` - cluster ordering
-  - [x] `order_words_by_reading()` - main entry point
-- [ ] Port `find_word_match()` to TypeScript (for harmonization - deferred until docTR)
-- [ ] Port `harmonize_words()` to TypeScript (for harmonization - deferred until docTR)
-- [ ] Port deduplication logic (for harmonization - deferred until docTR)
+## Current Status
+Run `make sanitize-test` to see pass/fail status.
 
-## Phase 6: UI and Export
-- [x] Display extracted words with bbox overlays
-- [x] Add word list panel (like existing web UI)
-- [x] Implement CSV export
-- [x] Implement JSON export
-- [x] Add model loading progress indicators
+---
 
-## Phase 7: Validation and Polish
-- [x] Benchmark: peter_lou.pdf with Tesseract.js only → verify ≥80% word match ✓ (90.9%)
-- [ ] Benchmark: peter_lou.pdf with docTR-TFJS only → verify ≥80% word match (deferred)
-- [x] Verify reading order matches ground truth CSV sequence ✓
-- [x] Stress test: peter_lou_50dpi.pdf processes without crashing ✓
-- [x] Add error handling for model load failures
-- [x] Screenshot validation with dev-browser ✓
+## Tasks
 
-## Completed
-- Phase 1: Project Setup (directory, Vite, HTML, dependencies)
-- Phase 2: PDF Loading (pdf-loader.ts with PDF.js)
-- Phase 3: Tesseract.js Integration (ocr/tesseract.ts wrapper)
-- Phase 5: Geometric clustering algorithm ported (geometric-clustering.ts)
-- Phase 6: UI and export (bbox overlays, word list, CSV/JSON export)
-- Phase 7: Tesseract.js validation PASSED (90.9% word match)
+### Phase 1: Dictionary Coverage
+- [ ] Add missing proper nouns to `data/dictionaries/custom.txt`
+- [ ] Add common words that might be OCR'd incorrectly to dictionaries
+- [ ] Verify dictionaries load with `make sanitize-check`
+- [ ] Ensure `Name`, `Owner`, `Species`, `Breed`, `Document` are in dictionaries
 
-## Validation Results
+### Phase 2: Single-Character Edit Distance Corrections
+These have edit distance 1 and should definitely correct:
+- [ ] Fix `test_correct_document` - "Decument" -> "Document" (o->e)
+- [ ] Fix `test_correct_name` - "Hame:" -> "Name:" (N->H)
+- [ ] Fix `test_correct_martinez` - "Marlinez" -> "Martinez" (t->l)
 
-### Tesseract.js Benchmark (peter_lou.pdf - clean)
-| Page | Ground Truth | Browser | Matches | Match % |
-|------|--------------|---------|---------|---------|
-| 1    | 86 words     | 90      | 72      | 83.7%   |
-| 2    | 160 words    | 165     | 151     | 94.4%   |
-| 3    | 104 words    | 109     | 95      | 91.3%   |
-| **Total** | **350 words** | **364** | **318** | **90.9%** |
+### Phase 3: Two-Character Edit Distance Corrections
+- [ ] Fix `test_correct_compassionate` - "Compassianae" -> "Compassionate" (dist 2)
+- [ ] Fix `test_correct_species` - "Speties:" -> "Species:" (c->t, i deleted)
+- [ ] Fix `test_correct_domestic` - "Domeelic" -> "Domestic" (st->el)
+- [ ] Fix `test_correct_owner` - "Dmner:" -> "Owner:" (Ow->Dm)
 
-**Target: ≥80% → PASS**
+### Phase 4: Higher Edit Distance (Optional - Context Mode)
+These have edit distance 3+ and may require context correction:
+- [ ] Fix `test_correct_feline` - "Folinn" -> "Feline" (edit dist 3)
+- [ ] Fix `test_correct_january` - "lanuiry" -> "January" (edit dist 3)
+- [ ] Fix `test_correct_shorthair` - "Shorifair" -> "Shorthair" (edit dist 3)
+- [ ] Fix `test_correct_rebecca` - "Reteia" -> "Rebecca" (edit dist 4)
 
-### Stress Test (peter_lou_50dpi.pdf - degraded)
-- Page 1: 92 words extracted
-- Page 2: 184 words extracted
-- Page 3: 122 words extracted
-- **Result: No crashes, all pages processed successfully**
+### Phase 5: Validation
+- [ ] Run `make sanitize-test` - all deterministic tests pass
+- [ ] Run `make sanitize-test-verbose` - verify correction output
+- [ ] Verify `test_ground_truth_coverage` achieves >85%
+- [ ] Document config changes made
 
-## Notes
-- docTR-TFJS integration deferred - requires downloading and hosting TensorFlow.js models (~50-100MB)
-- Tesseract.js alone achieves 90.9% word match, exceeding the 80% target
-- Reading order is working correctly (geometric clustering algorithm ported)
-- Harmonization logic deferred until docTR is integrated
+---
+
+## Files to Modify
+- `src/portadoc/sanitize.py` - Core sanitization logic
+- `config/sanitize.yaml` - Configuration thresholds
+- `data/dictionaries/custom.txt` - Custom dictionary
+- `data/dictionaries/medical_terms.txt` - Medical terms
+
+## Degraded OCR Examples (from 50 DPI scan)
+
+### Page 1 Header
+```
+Degraded: NORTHWEST VETERINARY . ASSOCIATES Compassianae Cars lor our Folinn Friends Decument ID: INa-2n25-
+
+Ground Truth: NORTHWEST VETERINARY ASSOCIATES Compassionate Care for Your Feline Friends Document ID: INK-2025-
+```
+
+### Page 1 Patient Section
+```
+Degraded: PATIENT INFORMATION Hame: Peterlau Speties: Felina Domeelic Shorifair
+
+Ground Truth: PATIENT INFORMATION Name: Peter Lou Species: Feline Domestic Shorthair
+```
+
+### Page 1 Owner Section
+```
+Degraded: Dmner: Reteia Marlinez Phone: (503) 555-0133
+
+Ground Truth: Owner: Rebecca Martinez Phone: (503) 555-0123
+```
+
+## Algorithm Notes
+
+The sanitizer uses SymSpell for O(1) fuzzy matching. Key thresholds:
+- `correct.max_edit_distance`: Maximum Levenshtein distance (default: 2)
+- `correct.min_correction_score`: Minimum score to apply correction (default: 0.7)
+- `context.max_edit_distance`: Higher distance allowed with context (default: 3)
+
+Scoring formula: `score = dictionary_weight / (edit_distance + 1)`
+
+Example: "Document" in English dictionary (weight 1.0) matched with distance 1:
+- Score = 1.0 / (1 + 1) = 0.5
+
+If min_correction_score is 0.7, this would NOT correct by default!
+Consider lowering min_correction_score or boosting dictionary weights.

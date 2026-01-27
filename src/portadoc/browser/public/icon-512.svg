@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="64" fill="url(#bg)"/>
+  <!-- Document icon -->
+  <rect x="128" y="85" width="256" height="342" rx="21" fill="#0f3460"/>
+  <!-- Text lines -->
+  <rect x="170" y="139" width="171" height="21" rx="5" fill="#4fc3f7"/>
+  <rect x="170" y="181" width="128" height="16" rx="5" fill="#4fc3f7" opacity="0.7"/>
+  <rect x="170" y="219" width="149" height="16" rx="5" fill="#4fc3f7" opacity="0.7"/>
+  <rect x="170" y="256" width="107" height="16" rx="5" fill="#4fc3f7" opacity="0.7"/>
+  <!-- Bounding box indicator -->
+  <rect x="170" y="309" width="171" height="64" rx="11" fill="none" stroke="#4caf50" stroke-width="8" stroke-dasharray="11,5"/>
+  <!-- P letter -->
+  <text x="256" y="368" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="37" font-weight="600" fill="#eee">P</text>
+</svg>

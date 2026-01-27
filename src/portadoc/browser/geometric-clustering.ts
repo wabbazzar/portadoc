@@ -4,10 +4,16 @@
  *
  * Algorithm Overview:
  * 1. Calculate distance thresholds using Q1 * 1.5 of inter-word distances
- * 2. Build clusters using union-find based on spatial proximity
- * 3. Detect and reposition intra-cluster outliers
- * 4. Order clusters top-to-bottom, words within clusters left-to-right/top-to-bottom
- * 5. Assign sequential word_ids based on reading order
+ * 2. Detect significant horizontal gaps ("block gaps") that may separate content blocks
+ * 3. Build clusters using union-find based on spatial proximity and block boundaries
+ * 4. Order clusters by row bands (top-to-bottom), then left-to-right within each band
+ * 5. Within each cluster, order words by rows (top-to-bottom, left-to-right)
+ * 6. Assign sequential word_ids based on reading order
+ *
+ * Note: "Block gaps" are significant horizontal gaps detected within rows.
+ * They may indicate column boundaries, but also table cells, side-by-side blocks, etc.
+ * The term "block gap" is more accurate than "column" since gaps don't necessarily
+ * span the full page height.
  */
 
 import {
@@ -44,6 +50,40 @@ const CONFIG = {
     outlierMultiplier: 3.0,
   },
 };
+
+/**
+ * Metadata about clustering decisions for a single cluster.
+ * Useful for debugging and visualization.
+ */
+export interface ClusterInfo {
+  id: number;
+  words: Word[];
+  bbox: BBox;
+  wordCount: number;
+  blockIndex: number; // Which block gap region this cluster belongs to
+  bandIndex: number; // Which row band this cluster belongs to
+  // Decision metadata
+  metadata: {
+    xThreshold: number;
+    yThreshold: number;
+    yFuzz: number;
+    connectionReasons: string[]; // Why words were grouped (e.g., "same-row", "vertical-stack")
+  };
+}
+
+/**
+ * Result of the ordering algorithm with cluster information.
+ */
+export interface OrderingResult {
+  words: Word[];
+  clusters: ClusterInfo[];
+  blockGaps: number[]; // X-positions of detected block gaps
+  thresholds: {
+    xThreshold: number;
+    yThreshold: number;
+    yFuzz: number;
+  };
+}
 
 // Helper to calculate horizontal gap between two words
 function horizontalGapWords(w1: Word, w2: Word): number {
@@ -125,14 +165,17 @@ class UnionFind {
 }
 
 /**
- * A group of spatially related words.
+ * Internal cluster representation during algorithm execution.
  */
 interface Cluster {
   words: Word[];
+  connectionReasons: Set<string>; // Track why words were connected
 }
 
-function clusterBoundingBox(cluster: Cluster): BBox | null {
-  if (cluster.words.length === 0) return null;
+function clusterBoundingBox(cluster: Cluster): BBox {
+  if (cluster.words.length === 0) {
+    return { x0: 0, y0: 0, x1: 0, y1: 0 };
+  }
   const x0 = Math.min(...cluster.words.map((w) => w.bbox.x0));
   const y0 = Math.min(...cluster.words.map((w) => w.bbox.y0));
   const x1 = Math.max(...cluster.words.map((w) => w.bbox.x1));
@@ -257,9 +300,18 @@ function estimateYFuzz(words: Word[], xThreshold: number): number {
 }
 
 /**
- * Detect major vertical column boundaries in the document layout.
+ * Detect significant horizontal gaps ("block gaps") in the document layout.
+ *
+ * These gaps may indicate:
+ * - Column boundaries (newspaper-style layout)
+ * - Side-by-side content blocks (address | contact info)
+ * - Table cell separations
+ * - Any significant horizontal separation
+ *
+ * The term "block gap" is preferred over "column" because these gaps
+ * don't necessarily span the full page height.
  */
-function detectColumnBoundaries(words: Word[], yFuzz: number): number[] {
+function detectBlockGaps(words: Word[], yFuzz: number): number[] {
   if (words.length < 2) return [];
 
   // Group words into rows based on y-center proximity
@@ -316,35 +368,55 @@ function detectColumnBoundaries(words: Word[], yFuzz: number): number[] {
 }
 
 /**
- * Assign a word to a column based on its position relative to boundaries.
+ * Assign a word to a block region based on its position relative to gap boundaries.
  */
-function assignColumn(word: Word, boundaries: number[]): number {
+function assignBlockIndex(word: Word, blockGaps: number[]): number {
   const wordCenterX = bboxCenterX(word.bbox);
-  for (let i = 0; i < boundaries.length; i++) {
-    if (wordCenterX < boundaries[i]) return i;
+  for (let i = 0; i < blockGaps.length; i++) {
+    if (wordCenterX < blockGaps[i]) return i;
   }
-  return boundaries.length;
+  return blockGaps.length;
 }
 
 /**
- * Build clusters using union-find based on spatial proximity and column detection.
+ * Result of building clusters, including detected block gaps.
+ */
+interface BuildClustersResult {
+  clusters: Cluster[];
+  blockGaps: number[];
+}
+
+/**
+ * Build clusters using union-find based on spatial proximity and block gap detection.
+ *
+ * Clustering rules:
+ * 1. Same row (y-overlap ≥ 50%) AND horizontally close (≤ 3x threshold)
+ *    - Small gaps (≤ 2x threshold) ignore block boundaries (handles headers like "NORTHWEST VETERINARY")
+ *    - Large gaps respect block boundaries (keeps "Grove" and "Email:" separate)
+ * 2. Vertically stacked (x-overlap ≥ 30%) AND vertically close (≤ 2x threshold)
+ *    - Only within same block region
+ * 3. Very close in both dimensions (fallback)
+ *    - Only within same block region
  */
 function buildClusters(
   words: Word[],
   xThreshold: number,
   yThreshold: number,
   yFuzz: number
-): Cluster[] {
-  if (words.length === 0) return [];
+): BuildClustersResult {
+  if (words.length === 0) return { clusters: [], blockGaps: [] };
 
   const n = words.length;
   const uf = new UnionFind(n);
 
-  // Detect column boundaries
-  const boundaries = detectColumnBoundaries(words, yFuzz);
+  // Detect block gap boundaries
+  const blockGaps = detectBlockGaps(words, yFuzz);
 
-  // Assign words to columns
-  const wordColumns = words.map((w) => assignColumn(w, boundaries));
+  // Assign words to block regions
+  const wordBlocks = words.map((w) => assignBlockIndex(w, blockGaps));
+
+  // Track connection reasons for each word pair
+  const connectionReasons = new Map<string, string>(); // "i,j" -> reason
 
   const { xOverlapMin, yOverlapMin, verticalMultiplier, sameRowXMultiplier } = CONFIG.connection;
 
@@ -362,45 +434,62 @@ function buildClusters(
       const yOverlap = yOverlapRatio(w1.bbox, w2.bbox);
 
       let shouldConnect = false;
+      let reason = '';
 
       // Rule 1: Same row (y-overlap) AND horizontally close
       if (yOverlap >= yOverlapMin && xDist <= xThreshold * sameRowXMultiplier) {
         const isSmallGap = xDist <= xThreshold * 2.0;
-        const sameColumn = wordColumns[i] === wordColumns[j];
+        const sameBlock = wordBlocks[i] === wordBlocks[j];
 
-        if (sameColumn || isSmallGap) {
+        if (sameBlock || isSmallGap) {
           shouldConnect = true;
+          reason = isSmallGap ? 'same-row-close' : 'same-row-same-block';
         }
       }
-      // Rules 2 and 3: respect column boundaries
-      else if (wordColumns[i] === wordColumns[j]) {
-        // Rule 2: Column aligned AND vertically close
+      // Rules 2 and 3: respect block boundaries
+      else if (wordBlocks[i] === wordBlocks[j]) {
+        // Rule 2: Vertically stacked (x-overlap) AND vertically close
         if (xOverlap >= xOverlapMin && yDist <= yThreshold * verticalMultiplier) {
           shouldConnect = true;
+          reason = 'vertical-stack';
         }
         // Rule 3: Very close in both dimensions
         else if (xDist <= xThreshold && yDist <= yThreshold) {
           shouldConnect = true;
+          reason = 'proximity';
         }
       }
 
       if (shouldConnect) {
         uf.union(i, j);
+        connectionReasons.set(`${i},${j}`, reason);
       }
     }
   }
 
-  // Group words by cluster root
-  const clustersMap = new Map<number, Word[]>();
+  // Group words by cluster root and collect connection reasons
+  const clustersMap = new Map<number, { words: Word[]; reasons: Set<string> }>();
   for (let i = 0; i < n; i++) {
     const root = uf.find(i);
     if (!clustersMap.has(root)) {
-      clustersMap.set(root, []);
+      clustersMap.set(root, { words: [], reasons: new Set() });
     }
-    clustersMap.get(root)!.push(words[i]);
+    clustersMap.get(root)!.words.push(words[i]);
   }
 
-  return Array.from(clustersMap.values()).map((words) => ({ words }));
+  // Collect reasons for each cluster
+  for (const [key, reason] of connectionReasons) {
+    const [i] = key.split(',').map(Number);
+    const root = uf.find(i);
+    clustersMap.get(root)!.reasons.add(reason);
+  }
+
+  const clusters = Array.from(clustersMap.values()).map(({ words, reasons }) => ({
+    words,
+    connectionReasons: reasons,
+  }));
+
+  return { clusters, blockGaps };
 }
 
 /**
@@ -478,11 +567,28 @@ function groupClustersIntoRowBands(clusters: Cluster[], yTolerance: number): Clu
 }
 
 /**
- * Order words by proper reading sequence using geometric clustering.
- * Main entry point for the reading order algorithm.
+ * Human-readable descriptions for connection reasons.
  */
-export function orderWordsByReading(words: Word[]): Word[] {
-  if (words.length === 0) return [];
+const REASON_DESCRIPTIONS: Record<string, string> = {
+  'same-row-close': 'Words on same row with small horizontal gap',
+  'same-row-same-block': 'Words on same row within same block region',
+  'vertical-stack': 'Words vertically stacked with x-overlap',
+  'proximity': 'Words very close in both dimensions',
+};
+
+/**
+ * Order words by proper reading sequence using geometric clustering.
+ * Returns full result with cluster information for visualization.
+ */
+export function orderWordsByReadingWithClusters(words: Word[]): OrderingResult {
+  if (words.length === 0) {
+    return {
+      words: [],
+      clusters: [],
+      blockGaps: [],
+      thresholds: { xThreshold: 0, yThreshold: 0, yFuzz: 0 },
+    };
+  }
 
   // Group by page first
   const pages = new Map<number, Word[]>();
@@ -493,10 +599,14 @@ export function orderWordsByReading(words: Word[]): Word[] {
     pages.get(word.page)!.push(word);
   }
 
-  const result: Word[] = [];
+  const resultWords: Word[] = [];
+  const resultClusters: ClusterInfo[] = [];
+  let allBlockGaps: number[] = [];
+  let lastThresholds = { xThreshold: 0, yThreshold: 0, yFuzz: 0 };
 
   // Process pages in order
   const sortedPageNums = [...pages.keys()].sort((a, b) => a - b);
+  let clusterIdCounter = 0;
 
   for (const pageNum of sortedPageNums) {
     const pageWords = pages.get(pageNum)!;
@@ -507,27 +617,69 @@ export function orderWordsByReading(words: Word[]): Word[] {
     // Estimate y-fuzz for row grouping
     const yFuzz = estimateYFuzz(pageWords, xThresh);
 
+    lastThresholds = { xThreshold: xThresh, yThreshold: yThresh, yFuzz };
+
     // Build clusters
-    const clusters = buildClusters(pageWords, xThresh, yThresh, yFuzz);
+    const { clusters, blockGaps } = buildClusters(pageWords, xThresh, yThresh, yFuzz);
+    allBlockGaps = blockGaps;
 
     // Group clusters into row bands
     const rowBands = groupClustersIntoRowBands(clusters, yFuzz);
 
     // Process each row band: sort clusters left-to-right within band
-    for (const band of rowBands) {
+    for (let bandIdx = 0; bandIdx < rowBands.length; bandIdx++) {
+      const band = rowBands[bandIdx];
       const bandSorted = [...band].sort((a, b) => clusterMinX(a) - clusterMinX(b));
 
       for (const cluster of bandSorted) {
         const orderedClusterWords = sortWordsWithinCluster(cluster, yFuzz);
-        result.push(...orderedClusterWords);
+        resultWords.push(...orderedClusterWords);
+
+        // Determine block index from first word
+        const blockIndex = cluster.words.length > 0
+          ? assignBlockIndex(cluster.words[0], blockGaps)
+          : 0;
+
+        // Build cluster info
+        const clusterInfo: ClusterInfo = {
+          id: clusterIdCounter++,
+          words: orderedClusterWords,
+          bbox: clusterBoundingBox(cluster),
+          wordCount: cluster.words.length,
+          blockIndex,
+          bandIndex: bandIdx,
+          metadata: {
+            xThreshold: xThresh,
+            yThreshold: yThresh,
+            yFuzz,
+            connectionReasons: Array.from(cluster.connectionReasons).map(
+              (r) => REASON_DESCRIPTIONS[r] || r
+            ),
+          },
+        };
+        resultClusters.push(clusterInfo);
       }
     }
   }
 
   // Assign sequential word_ids
-  for (let i = 0; i < result.length; i++) {
-    result[i] = { ...result[i], wordId: i };
+  for (let i = 0; i < resultWords.length; i++) {
+    resultWords[i] = { ...resultWords[i], wordId: i };
   }
 
-  return result;
+  return {
+    words: resultWords,
+    clusters: resultClusters,
+    blockGaps: allBlockGaps,
+    thresholds: lastThresholds,
+  };
+}
+
+/**
+ * Order words by proper reading sequence using geometric clustering.
+ * Main entry point for the reading order algorithm.
+ * Returns just the ordered words (backward compatible).
+ */
+export function orderWordsByReading(words: Word[]): Word[] {
+  return orderWordsByReadingWithClusters(words).words;
 }

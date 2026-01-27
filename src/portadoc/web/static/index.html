@@ -29,8 +29,12 @@
         <!-- Config Panel (hidden by default) -->
         <aside id="config-panel" class="hidden">
             <h3>Extraction Settings</h3>
-            <div class="config-group">
-                <label>Primary Engine:
+
+            <!-- OCR Engines Section -->
+            <details class="config-section" open>
+                <summary>OCR Engines</summary>
+                <div class="config-form-row" data-tooltip-key="ocr_engines.primary_engine">
+                    <label>Primary Engine <span class="help-icon">?</span></label>
                     <select id="cfg-primary">
                         <option value="">Config Default</option>
                         <option value="tesseract" selected>Tesseract</option>
@@ -38,30 +42,91 @@
                         <option value="doctr">docTR</option>
                         <option value="easyocr">EasyOCR</option>
                         <option value="paddleocr">PaddleOCR</option>
+                        <option value="kraken">Kraken</option>
                     </select>
-                </label>
-            </div>
-            <div class="config-group">
-                <label><input type="checkbox" id="cfg-tesseract" checked> Tesseract</label>
-                <label><input type="checkbox" id="cfg-easyocr" checked> EasyOCR</label>
-                <label><input type="checkbox" id="cfg-paddleocr" checked> PaddleOCR</label>
-                <label><input type="checkbox" id="cfg-doctr" checked> docTR</label>
-                <label><input type="checkbox" id="cfg-surya" checked> Surya</label>
-            </div>
-            <div class="config-group">
-                <label>Preprocess:
+                </div>
+                <div class="config-section-divider">Secondary Engines</div>
+                <div class="config-engines-grid">
+                    <label data-tooltip-key="ocr_engines.tesseract"><input type="checkbox" id="cfg-tesseract" checked> Tesseract</label>
+                    <label data-tooltip-key="ocr_engines.surya"><input type="checkbox" id="cfg-surya" checked> Surya</label>
+                    <label data-tooltip-key="ocr_engines.doctr"><input type="checkbox" id="cfg-doctr" checked> docTR</label>
+                    <label data-tooltip-key="ocr_engines.easyocr"><input type="checkbox" id="cfg-easyocr" checked> EasyOCR</label>
+                    <label data-tooltip-key="ocr_engines.paddleocr"><input type="checkbox" id="cfg-paddleocr" checked> PaddleOCR</label>
+                    <label data-tooltip-key="ocr_engines.kraken"><input type="checkbox" id="cfg-kraken"> Kraken</label>
+                </div>
+                <div class="config-section-divider">Preprocessing</div>
+                <div class="config-form-row" data-tooltip-key="ocr_engines.preprocess">
+                    <label>Preprocess <span class="help-icon">?</span></label>
                     <select id="cfg-preprocess">
                         <option value="none" selected>None</option>
                         <option value="light">Light</option>
                         <option value="standard">Standard</option>
                         <option value="aggressive">Aggressive</option>
                     </select>
-                </label>
-            </div>
-            <div class="config-group">
-                <label>PSM: <input type="number" id="cfg-psm" value="6" min="0" max="13"></label>
-                <label>OEM: <input type="number" id="cfg-oem" value="3" min="0" max="3"></label>
-            </div>
+                </div>
+                <div class="config-form-row" data-tooltip-key="ocr_engines.psm">
+                    <label>PSM <span class="help-icon">?</span></label>
+                    <input type="number" id="cfg-psm" value="6" min="0" max="13">
+                </div>
+                <div class="config-form-row" data-tooltip-key="ocr_engines.oem">
+                    <label>OEM <span class="help-icon">?</span></label>
+                    <input type="number" id="cfg-oem" value="3" min="0" max="3">
+                </div>
+            </details>
+
+            <!-- Harmonization Section -->
+            <details class="config-section">
+                <summary>Harmonization</summary>
+                <div class="config-form-row" data-tooltip-key="harmonization.iou_threshold">
+                    <label>IoU Threshold <span class="help-icon">?</span></label>
+                    <input type="number" id="cfg-iou-threshold" value="0.3" min="0" max="1" step="0.05">
+                </div>
+                <div class="config-form-row" data-tooltip-key="harmonization.text_match_bonus">
+                    <label>Text Match Bonus <span class="help-icon">?</span></label>
+                    <input type="number" id="cfg-text-match-bonus" value="0.15" min="0" max="1" step="0.05">
+                </div>
+                <div class="config-form-row" data-tooltip-key="harmonization.center_distance_max">
+                    <label>Center Dist Max <span class="help-icon">?</span></label>
+                    <input type="number" id="cfg-center-distance-max" value="12" min="0" max="100" step="1">
+                </div>
+                <div class="config-section-divider">Confidence Thresholds</div>
+                <div class="config-form-row" data-tooltip-key="harmonization.word_min_conf">
+                    <label>Word Min Conf <span class="help-icon">?</span></label>
+                    <input type="number" id="cfg-word-min-conf" value="60" min="0" max="100" step="5">
+                </div>
+                <div class="config-form-row" data-tooltip-key="harmonization.low_conf_min">
+                    <label>Low Conf Min <span class="help-icon">?</span></label>
+                    <input type="number" id="cfg-low-conf-min" value="20" min="0" max="100" step="5">
+                </div>
+            </details>
+
+            <!-- Geometric Clustering Section -->
+            <details class="config-section">
+                <summary>Reading Order</summary>
+                <div class="config-section-divider">Y-Fuzz (Row Detection)</div>
+                <div class="config-form-row" data-tooltip-key="geometric_clustering.yfuzz_default">
+                    <label>Default <span class="help-icon">?</span></label>
+                    <input type="number" id="cfg-yfuzz-default" value="5.0" min="0" max="50" step="0.5">
+                </div>
+                <div class="config-form-row" data-tooltip-key="geometric_clustering.yfuzz_multiplier">
+                    <label>Multiplier <span class="help-icon">?</span></label>
+                    <input type="number" id="cfg-yfuzz-multiplier" value="2.0" min="0.5" max="5" step="0.1">
+                </div>
+                <div class="config-form-row" data-tooltip-key="geometric_clustering.yfuzz_max_height_ratio">
+                    <label>Max Height Ratio <span class="help-icon">?</span></label>
+                    <input type="number" id="cfg-yfuzz-max-height-ratio" value="0.25" min="0.1" max="1" step="0.05">
+                </div>
+                <div class="config-section-divider">Connection Rules</div>
+                <div class="config-form-row" data-tooltip-key="geometric_clustering.x_overlap_min">
+                    <label>X Overlap Min <span class="help-icon">?</span></label>
+                    <input type="number" id="cfg-x-overlap-min" value="0.30" min="0" max="1" step="0.05">
+                </div>
+                <div class="config-form-row" data-tooltip-key="geometric_clustering.y_overlap_min">
+                    <label>Y Overlap Min <span class="help-icon">?</span></label>
+                    <input type="number" id="cfg-y-overlap-min" value="0.50" min="0" max="1" step="0.05">
+                </div>
+            </details>
+
             <button id="apply-extract-btn">Apply & Re-extract</button>
         </aside>
 
@@ -108,6 +173,7 @@
                                 <option value="P">P (PaddleOCR)</option>
                                 <option value="D">D (docTR)</option>
                                 <option value="S">S (Surya)</option>
+                                <option value="K">K (Kraken)</option>
                                 <option value="X">X (Pixel)</option>
                             </select>
                         </label>

@@ -1,0 +1,101 @@
+# Custom terms for peter_lou test data
+# Extracted from ground truth - terms unlikely to be in standard dictionaries
+
+# Veterinary/Medical Terms
+FLUTD
+Gabapentin
+Mirataz
+mirtazapine
+Clavamox
+urinalysis
+gastrointestinal
+transdermal
+castration
+premolar
+lethargic
+
+# Dosing notation
+PO
+PRN
+q12h
+q24h
+mg
+lbs
+kg
+bpm
+2mg
+50mg
+
+# Veterinary titles/licenses
+DVM
+RVT
+OR-VET
+OR-RVT
+
+# Medical abbreviations
+CBC
+MRN
+Resp
+
+# Location-specific
+NW
+SW
+Portland
+Multicare
+
+# Proper nouns from document
+Peter
+Lou
+Rebecca
+Martinez
+David
+Sarah
+Chen
+Thompson
+NORTHWEST
+VETERINARY
+ASSOCIATES
+
+# Document structure terms
+Intake
+Allergies
+Sensitivities
+Diagnoses
+Radiographs
+Ultrasound
+Veterinarian
+Technician
+
+# Breeds
+Shorthair
+Feline
+Domestic
+
+# Common words that may have rare homographs
+Compassionate
+Document
+Species
+Owner
+Name
+
+# Street names
+Morrison
+
+# Prescription diet
+c/d
+Multicare
+Hill's
+
+# Months (OCR-sensitive)
+January
+February
+March
+April
+May
+June
+July
+August
+September
+October
+November
+December

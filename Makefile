@@ -42,6 +42,11 @@ install-ocr: ## Install optional OCR dependencies (PaddleOCR, docTR, etc.)
 check: ## Check OCR engine availability
 	$(PORTADOC) check
 
+##@ Testing
+
+sanitize-ranking-test: ## Run ranking tests (Python only for now)
+	$(PYTHON) -m pytest tests/test_sanitize_ranking.py -v
+
 ##@ Extraction
 
 extract: ## Extract words from PDF (use PDF=path/to/file.pdf)
@@ -129,6 +134,29 @@ extract-reading-order: ## Extract with reading order (default)
 
 extract-no-reading-order: ## Extract with simple y,x ordering (legacy)
 	$(PORTADOC) extract --no-easyocr --preprocess none --psm 6 --no-reading-order $(PDF) $(if $(OUTPUT),-o $(OUTPUT),)
+
+##@ Sanitization
+
+sanitize-check: ## Check sanitization dependencies and dictionaries
+	$(PORTADOC) sanitize-check
+
+sanitize-test: ## Run sanitization correction tests
+	$(VENV)/bin/pytest tests/test_sanitize_correction.py -v
+
+sanitize-test-verbose: ## Run sanitization tests with full output
+	$(VENV)/bin/pytest tests/test_sanitize_correction.py -v -s
+
+sanitize-ranking-test: ## Run sanitization ranking tests (multi-signal scoring)
+	$(VENV)/bin/pytest tests/test_sanitize_ranking.py -v
+
+sanitize-test-all: ## Run all sanitization tests (correction + ranking)
+	$(VENV)/bin/pytest tests/test_sanitize.py tests/test_sanitize_correction.py tests/test_sanitize_ranking.py -v
+
+sanitize-eval: ## Evaluate sanitization on clean PDF
+	$(PORTADOC) sanitize-eval data/input/peter_lou.pdf data/input/peter_lou_words_slim.csv -v
+
+sanitize-eval-degraded: ## Evaluate sanitization on degraded PDF
+	$(PORTADOC) sanitize-eval data/input/peter_lou_50dpi.pdf data/input/peter_lou_words_slim.csv -v
 
 ##@ Utilities
 

@@ -1,0 +1,83 @@
+confusions:
+  # High probability confusions (0.8+)
+  - pattern: "l"
+    confused_with: ["1", "i", "I", "|"]
+    probability: 0.9
+  - pattern: "1"
+    confused_with: ["l", "i", "I", "|"]
+    probability: 0.9
+  - pattern: "i"
+    confused_with: ["l", "1", "I", "|"]
+    probability: 0.85
+  - pattern: "I"
+    confused_with: ["l", "1", "i", "|"]
+    probability: 0.85
+  - pattern: "0"
+    confused_with: ["O", "o"]
+    probability: 0.9
+  - pattern: "O"
+    confused_with: ["0", "o"]
+    probability: 0.85
+  - pattern: "o"
+    confused_with: ["0", "O"]
+    probability: 0.8
+  - pattern: "rn"
+    confused_with: ["m"]
+    probability: 0.85
+  - pattern: "m"
+    confused_with: ["rn"]
+    probability: 0.8
+  - pattern: "cl"
+    confused_with: ["d"]
+    probability: 0.7
+  - pattern: "d"
+    confused_with: ["cl"]
+    probability: 0.6
+  - pattern: "vv"
+    confused_with: ["w"]
+    probability: 0.75
+  - pattern: "w"
+    confused_with: ["vv"]
+    probability: 0.7
+  - pattern: "ii"
+    confused_with: ["u"]
+    probability: 0.7
+  - pattern: "u"
+    confused_with: ["ii"]
+    probability: 0.65
+
+  # Medium probability confusions (0.5-0.8)
+  - pattern: "c"
+    confused_with: ["e"]
+    probability: 0.6
+    context: "end"  # at end of word
+  - pattern: "e"
+    confused_with: ["c"]
+    probability: 0.55
+    context: "end"
+  - pattern: "a"
+    confused_with: ["o"]
+    probability: 0.6
+    context: "middle"
+  - pattern: "o"
+    confused_with: ["a"]
+    probability: 0.55
+    context: "middle"
+  - pattern: "h"
+    confused_with: ["n"]
+    probability: 0.65
+  - pattern: "n"
+    confused_with: ["h"]
+    probability: 0.6
+  - pattern: "S"
+    confused_with: ["5"]
+    probability: 0.7
+  - pattern: "5"
+    confused_with: ["S"]
+    probability: 0.7
+  - pattern: "B"
+    confused_with: ["8"]
+    probability: 0.65
+  - pattern: "8"
+    confused_with: ["B"]
+    probability: 0.65

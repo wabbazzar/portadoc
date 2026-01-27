@@ -15,6 +15,7 @@ const state = {
     highlightedWordId: null,
     lastExtractionInfo: null, // { pdfPath, csvPath, wordCount }
     pageRotations: {}, // Page rotation angles from extraction (0, 90, 180, 270)
+    uiDescriptions: {}, // Tooltip descriptions from config
 };
 
 // Status colors for bounding boxes
@@ -114,8 +115,107 @@ async function init() {
     readingOrderContent = document.getElementById('reading-order-content');
     lineCount = document.getElementById('line-count');
 
-    // Load PDF list
+    // Load PDF list and config
     await loadPdfList();
+    await loadConfig();
+}
+
+async function loadConfig() {
+    try {
+        const response = await fetch('/api/config');
+        const config = await response.json();
+
+        // Populate harmonization fields
+        if (config.harmonize) {
+            setInputValue('cfg-iou-threshold', config.harmonize.iou_threshold);
+            setInputValue('cfg-text-match-bonus', config.harmonize.text_match_bonus);
+            setInputValue('cfg-center-distance-max', config.harmonize.center_distance_max);
+            setInputValue('cfg-word-min-conf', config.harmonize.word_min_conf);
+            setInputValue('cfg-low-conf-min', config.harmonize.low_conf_min_conf);
+        }
+
+        // Populate geometric clustering fields
+        if (config.geometric_clustering) {
+            if (config.geometric_clustering.y_fuzz) {
+                setInputValue('cfg-yfuzz-default', config.geometric_clustering.y_fuzz.default);
+                setInputValue('cfg-yfuzz-multiplier', config.geometric_clustering.y_fuzz.multiplier);
+                setInputValue('cfg-yfuzz-max-height-ratio', config.geometric_clustering.y_fuzz.max_height_ratio);
+            }
+            if (config.geometric_clustering.connection) {
+                setInputValue('cfg-x-overlap-min', config.geometric_clustering.connection.x_overlap_min);
+                setInputValue('cfg-y-overlap-min', config.geometric_clustering.connection.y_overlap_min);
+            }
+        }
+
+        // Populate OCR settings
+        if (config.ocr && config.ocr.tesseract) {
+            setInputValue('cfg-psm', config.ocr.tesseract.psm);
+            setInputValue('cfg-oem', config.ocr.tesseract.oem);
+        }
+
+        // Store UI descriptions and apply tooltips
+        if (config.ui_descriptions) {
+            state.uiDescriptions = config.ui_descriptions;
+            applyConfigTooltips();
+        }
+
+        console.log('Config loaded:', config);
+    } catch (error) {
+        console.error('Failed to load config:', error);
+    }
+}
+
+function applyConfigTooltips() {
+    // Find all elements with data-tooltip-key attribute
+    document.querySelectorAll('[data-tooltip-key]').forEach(el => {
+        const key = el.dataset.tooltipKey;
+        const description = getDescriptionByKey(key);
+
+        if (description) {
+            // Create tooltip element
+            const tooltip = document.createElement('div');
+            tooltip.className = 'config-tooltip';
+            tooltip.textContent = description;
+
+            // For grid items (checkboxes), position relative to parent
+            if (el.classList.contains('config-engines-grid')) {
+                // This is the grid container, skip it
+                return;
+            }
+
+            // Insert tooltip into the element
+            el.style.position = 'relative';
+            el.appendChild(tooltip);
+        }
+    });
+}
+
+function getDescriptionByKey(key) {
+    // Key format: "category.field" e.g., "ocr_engines.primary_engine"
+    const parts = key.split('.');
+    if (parts.length !== 2) return null;
+
+    const [category, field] = parts;
+    if (state.uiDescriptions[category] && state.uiDescriptions[category][field]) {
+        return state.uiDescriptions[category][field];
+    }
+    return null;
+}
+
+function setInputValue(id, value) {
+    const el = document.getElementById(id);
+    if (el && value !== undefined && value !== null) {
+        el.value = value;
+    }
+}
+
+function getFloatValue(id) {
+    const el = document.getElementById(id);
+    if (el && el.value) {
+        const val = parseFloat(el.value);
+        return isNaN(val) ? null : val;
+    }
+    return null;
 }
 
 async function loadPdfList() {
@@ -219,7 +319,15 @@ async function loadWords(pdfPath) {
 
         state.words = data.words || [];
         state.pageRotations = data.page_rotations || {};
-        renderPage(state.currentPage);
+
+        // Re-render page if rotation is non-zero (PDF needs to be rotated)
+        const pageIndex = state.currentPage - 1;
+        const rotation = state.pageRotations[pageIndex] || 0;
+        if (rotation !== 0) {
+            await renderPage(state.currentPage);
+        } else {
+            renderBboxes();
+        }
         renderWordList();
 
         // Update stats
@@ -497,6 +605,7 @@ const SOURCE_NAMES = {
     'D': 'docTR',
     'P': 'PaddleOCR',
     'S': 'Surya',
+    'K': 'Kraken',
     'PX': 'Pixel Detection',
     'X': 'Pixel Detection',  // Legacy
 };
@@ -527,6 +636,7 @@ function showWordDetails(word) {
         <p><strong>docTR:</strong> ${escapeHtml(word.doctr_text || '-')}</p>
         <p><strong>PaddleOCR:</strong> ${escapeHtml(word.paddle_text || '-')}</p>
         <p><strong>Surya:</strong> ${escapeHtml(word.surya_text || '-')}</p>
+        <p><strong>Kraken:</strong> ${escapeHtml(word.kraken_text || '-')}</p>
     `;
 
     document.getElementById('word-details').classList.remove('hidden');
@@ -551,10 +661,26 @@ async function onExtract() {
         use_paddleocr: document.getElementById('cfg-paddleocr')?.checked ?? true,
         use_doctr: document.getElementById('cfg-doctr')?.checked ?? true,
         use_surya: document.getElementById('cfg-surya')?.checked ?? true,
+        use_kraken: document.getElementById('cfg-kraken')?.checked ?? false,
         preprocess: document.getElementById('cfg-preprocess')?.value ?? 'none',
         psm: parseInt(document.getElementById('cfg-psm')?.value ?? '6'),
         oem: parseInt(document.getElementById('cfg-oem')?.value ?? '3'),
         primary_engine: primaryEngine,
+        // Config overrides
+        harmonize: {
+            iou_threshold: getFloatValue('cfg-iou-threshold'),
+            text_match_bonus: getFloatValue('cfg-text-match-bonus'),
+            center_distance_max: getFloatValue('cfg-center-distance-max'),
+            word_min_conf: getFloatValue('cfg-word-min-conf'),
+            low_conf_min_conf: getFloatValue('cfg-low-conf-min'),
+        },
+        geometric_clustering: {
+            y_fuzz_default: getFloatValue('cfg-yfuzz-default'),
+            y_fuzz_multiplier: getFloatValue('cfg-yfuzz-multiplier'),
+            y_fuzz_max_height_ratio: getFloatValue('cfg-yfuzz-max-height-ratio'),
+            x_overlap_min: getFloatValue('cfg-x-overlap-min'),
+            y_overlap_min: getFloatValue('cfg-y-overlap-min'),
+        },
     };
     console.log('Extraction request:', request);
 

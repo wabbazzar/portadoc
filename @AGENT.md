@@ -1,42 +1,45 @@
-# Agent Instructions - Browser Portadoc Client
+# Agent Instructions - OCR Text Sanitization
 
 ## Build Commands
 
 ```bash
-# Initial setup (run once)
-cd src/portadoc/browser
-npm install
+# Activate virtual environment (REQUIRED)
+source .venv/bin/activate
 
-# Development server with hot reload
-npm run dev
-# Opens at http://localhost:5173
+# Check dependencies
+make sanitize-check
 
-# Production build
-npm run build
-
-# Type checking
-npm run typecheck
+# Install symspellpy if missing
+pip install symspellpy
 ```
 
 ## Test Commands
 
 ```bash
-# No automated tests yet - use manual validation with dev-browser
+# Run all sanitization tests
+make sanitize-test
 
-# Validation workflow:
-# 1. Start dev server: cd src/portadoc/browser && npm run dev
-# 2. Use dev-browser skill to navigate to http://localhost:5173
-# 3. Upload test PDFs and verify extraction
+# Run with verbose output (shows corrections)
+make sanitize-test-verbose
+
+# Run specific test
+python -m pytest tests/test_sanitize_correction.py::TestDegradedOCRCorrection::test_correct_document -v
+
+# Run original sanitize tests (unit tests)
+python -m pytest tests/test_sanitize.py -v
 ```
 
 ## Run Commands
 
 ```bash
-# Development
-cd src/portadoc/browser && npm run dev
+# Sanitize a CSV file
+./portadoc sanitize input.csv -o output.csv
 
-# Preview production build
-cd src/portadoc/browser && npm run preview
+# Evaluate sanitization against ground truth
+./portadoc sanitize-eval data/input/peter_lou.pdf data/input/peter_lou_words_slim.csv
+
+# Check sanitization status
+./portadoc sanitize-check
 ```
 
 ## Test Data
@@ -44,69 +47,103 @@ cd src/portadoc/browser && npm run preview
 | File | Description |
 |------|-------------|
 | `data/input/peter_lou.pdf` | Clean 3-page test PDF |
-| `data/input/peter_lou_50dpi.pdf` | Degraded version for stress testing |
-| `data/input/peter_lou_words_slim.csv` | Ground truth (401 words, correct reading order) |
-| `data/input/peter_lou_50dpi_page*.jpg` | Pre-converted JPG images for quick testing |
+| `data/input/peter_lou_50dpi.pdf` | Degraded version for testing |
+| `data/input/peter_lou_words_slim.csv` | Ground truth (401 words) |
 
 ## Validation Criteria
 
-### Benchmark: peter_lou.pdf (clean)
-- Tesseract.js alone: ≥80% word match (≥320 of 401 words)
-- docTR-TFJS alone: ≥80% word match (≥320 of 401 words)
-- Reading order: must match ground truth CSV sequence
+### Correction Tests
+Run `make sanitize-test` - all tests should pass:
+- `test_correct_document` - "Decument" -> "Document"
+- `test_correct_name` - "Hame:" -> "Name:"
+- `test_correct_compassionate` - "Compassianae" -> "Compassionate"
+- `test_correct_species` - "Speties:" -> "Species:"
+- `test_correct_domestic` - "Domeelic" -> "Domestic"
 
-### Stress test: peter_lou_50dpi.pdf (degraded)
-- Must process without crashing
-- Words extracted (accuracy not required)
+### Coverage Test
+- `test_ground_truth_coverage` - > 85% of ground truth words preserved or correctable
+
+### No Over-Correction
+- Valid words like "Cars" should NOT be changed to "Care"
+- Numeric values should be preserved
+- Email addresses should be preserved
 
 ## Architecture
 
 ```
-src/portadoc/browser/
-├── index.html              # Main page
-├── app.ts                  # Main application logic
-├── pdf-loader.ts           # PDF.js wrapper
-├── ocr/
-│   ├── tesseract.ts        # Tesseract.js wrapper
-│   └── doctr.ts            # docTR-TFJS wrapper
-├── geometric-clustering.ts # Reading order algorithm
-├── harmonize.ts            # Multi-engine result fusion
-├── models.ts               # TypeScript interfaces
-└── styles.css              # Styling
+src/portadoc/
+├── sanitize.py              # Main sanitizer (Sanitizer class, DictionaryManager)
+├── cli.py                   # CLI commands (sanitize, sanitize-eval, sanitize-check)
+└── ...
+
+config/
+└── sanitize.yaml            # Thresholds and dictionary config
+
+data/dictionaries/
+├── english_words.txt        # 370k English words
+├── us_names.txt             # 4.9k US names
+├── medical_terms.txt        # Medical/veterinary terms
+└── custom.txt               # Project-specific terms
+
+tests/
+├── test_sanitize.py         # Unit tests
+└── test_sanitize_correction.py  # Correction tests (degraded OCR)
 ```
 
-## Key Dependencies
+## Key Configuration
 
-```json
-{
-  "dependencies": {
-    "pdfjs-dist": "^4.0.0",
-    "tesseract.js": "^5.0.0",
-    "@tensorflow/tfjs": "^4.0.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.0.0",
-    "vite": "^5.0.0"
-  }
-}
+In `config/sanitize.yaml`:
+
+```yaml
+sanitize:
+  correct:
+    max_edit_distance: 2      # Max Levenshtein distance
+    min_correction_score: 0.7 # Minimum score to apply correction
+    dictionary_weights:
+      english: 1.0
+      names: 0.9
+      medical: 0.8
+      custom: 1.0
+
+  context:
+    enabled: true
+    max_edit_distance: 3      # Higher distance with context
 ```
 
-## GUI Testing
+## Scoring Formula
 
-Use **dev-browser** skill for visual verification:
+Current scoring in `sanitize.py`:
+```python
+score = weight / (distance + 1)
+```
 
-```
-1. Navigate to http://localhost:5173
-2. Upload PDF or image
-3. Wait for OCR to complete
-4. Take screenshot
-5. Verify bounding boxes are displayed
-Save screenshots to screenshots/browser-client-[step].png
-```
+Examples:
+- Distance 0 (exact match): score = 1.0 (preserved)
+- Distance 1: score = 1.0 / 2 = 0.5
+- Distance 2: score = 1.0 / 3 = 0.33
+- Distance 3: score = 1.0 / 4 = 0.25
+
+With `min_correction_score: 0.7`, nothing corrects!
 
 ## Common Issues
 
-1. **CORS errors with PDF.js worker**: Use local worker file or configure Vite proxy
-2. **TensorFlow.js memory**: Call `tf.dispose()` on tensors after use
-3. **Tesseract.js slow first load**: Language data downloads ~10MB on first use
-4. **docTR model loading**: Models are ~50-100MB, show progress indicator
+1. **No corrections happening**: Lower `min_correction_score` or change scoring formula
+2. **Over-correction**: Raise `min_correction_score` or add word to preserve list
+3. **Missing dictionary**: Check paths in `config/sanitize.yaml`
+4. **SymSpell not found**: Run `pip install symspellpy`
+
+## Quick Debug
+
+```python
+# In Python REPL
+from portadoc.sanitize import Sanitizer, load_sanitize_config
+
+config = load_sanitize_config()
+s = Sanitizer(config)
+s.load_dictionaries()
+
+# Test a word
+result = s.sanitize_word("Decument", confidence=60.0)
+print(f"{result.original_text} -> {result.sanitized_text} ({result.status.value})")
+print(f"Score: {result.correction_score}, Distance: {result.edit_distance}")
+```

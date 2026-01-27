@@ -1,6 +1,32 @@
 # Portadoc Harmonization Configuration
 # All thresholds are configurable - tune based on your document quality
 
+# UI descriptions for settings (used in web interface tooltips)
+ui_descriptions:
+  ocr_engines:
+    primary_engine: "Engine whose bounding boxes are used as the reference. Other engines vote on text."
+    tesseract: "Google's OCR engine. Best bbox precision, reliable for most documents."
+    easyocr: "PyTorch-based OCR. Good for degraded documents but line-level bboxes."
+    paddleocr: "PaddlePaddle OCR. Good general performance, may have ~10px bbox offset."
+    doctr: "Document Text Recognition. High text accuracy, good as secondary."
+    surya: "State-of-the-art accuracy. Word-level with polygon support."
+    kraken: "Historical/degraded document specialist. Word-level from character cuts."
+    preprocess: "Image enhancement before OCR. 'none' for clean PDFs, 'aggressive' for degraded."
+    psm: "Tesseract page segmentation mode. 6=uniform block (default), 3=auto, 11=sparse text."
+    oem: "Tesseract OCR engine mode. 3=default (LSTM+legacy), 1=LSTM only."
+  harmonization:
+    iou_threshold: "Minimum bbox overlap (0-1) to consider two words as matching across engines."
+    text_match_bonus: "IoU bonus when text matches exactly. Helps match offset bboxes."
+    center_distance_max: "Max pixel distance between bbox centers for text-match fallback."
+    word_min_conf: "Confidence threshold for 'word' status (trusted text + bbox)."
+    low_conf_min: "Confidence threshold for 'low_conf' status (trusted bbox only)."
+  geometric_clustering:
+    yfuzz_default: "Default vertical tolerance (pixels) for grouping words into rows."
+    yfuzz_multiplier: "Multiplier on std deviation for adaptive y-fuzz calculation."
+    yfuzz_max_height_ratio: "Cap y-fuzz at this fraction of average line height."
+    x_overlap_min: "Min horizontal overlap (0-1) to consider words column-aligned."
+    y_overlap_min: "Min vertical overlap (0-1) to consider words on the same row."
+
 harmonize:
   # IoU threshold for matching words across engines
   iou_threshold: 0.3
@@ -56,6 +82,11 @@ harmonize:
         # Surya bboxes can be offset - use looser matching
         iou_threshold_override: 0.08  # Lower threshold for Surya
         center_distance_max_override: 50.0  # Allow larger center offset
+      kraken:
+        enabled: false            # Disabled by default (requires model download)
+        weight: 1.0               # Good accuracy for historical/degraded docs
+        garbage_penalty: 0.1
+        bbox_type: word
 
   # Garbage text detection
   garbage_detection:
@@ -89,13 +120,43 @@ ocr:
     pretrained: true
     assume_straight_pages: true
 
+  kraken:
+    model_path: null              # Path to recognition model (null = auto-detect)
+
 # Page alignment (auto-rotation) settings
 page_alignment:
   enabled: true                    # Master switch for page alignment
-  method: auto                     # Detection method: tesseract_osd, surya, or auto (OSD with Surya fallback)
+  method: tesseract_osd            # Detection method: tesseract_osd, surya, or auto (OSD with Surya fallback)
   min_confidence: 0.1              # Min confidence to apply rotation (0-1). OSD confidence is typically low (0.1-0.3) even for correct detections.
   angles: [90, 180, 270]           # Which rotations to detect/correct
   surya_fallback_threshold: 0.05   # If using "auto" method, use Surya when OSD confidence is below this
+
+# Geometric clustering for reading order
+# These settings control how words are grouped into rows and columns
+geometric_clustering:
+  # Row detection: y-fuzz determines how much vertical variation is allowed
+  # when grouping words into the same row. Lower = stricter rows.
+  y_fuzz:
+    default: 5.0                  # Default y-fuzz when estimation fails (pixels)
+    multiplier: 2.0               # Multiplier on std for y-fuzz calculation
+    max_height_ratio: 0.25        # Cap y-fuzz at this fraction of avg line height (was 0.5, too loose)
+
+  # Distance thresholds for clustering
+  thresholds:
+    default_x: 50.0               # Default x-threshold when calculation fails
+    default_y: 20.0               # Default y-threshold when calculation fails
+    q1_multiplier: 1.5            # Multiplier on Q1 for gap detection
+
+  # Intra-cluster settings
+  intra_cluster:
+    outlier_multiplier: 1.2       # Distance multiplier for outlier detection
+
+  # Connection rules for clustering
+  connection:
+    x_overlap_min: 0.30           # Min x-overlap for column alignment (30%)
+    y_overlap_min: 0.50           # Min y-overlap for same-row detection (50%)
+    vertical_multiplier: 3.0      # Allow larger y-gaps for column-aligned words
+    same_row_x_multiplier: 8.0    # Allow larger x-gaps for same-row items
 
 # Output settings
 output:
