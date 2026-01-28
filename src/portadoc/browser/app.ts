@@ -1852,8 +1852,11 @@ function escapeHtml(text: string): string {
 async function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     try {
-      const registration = await navigator.serviceWorker.register('/sw.js', {
-        scope: '/',
+      // Use base path for GH Pages compatibility
+      const basePath = import.meta.env.BASE_URL || '/';
+      const swPath = `${basePath}sw.js`.replace('//', '/');
+      const registration = await navigator.serviceWorker.register(swPath, {
+        scope: basePath,
       });
       console.log('[PWA] Service Worker registered:', registration.scope);
 
