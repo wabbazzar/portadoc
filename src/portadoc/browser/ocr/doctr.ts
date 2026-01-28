@@ -6,11 +6,15 @@
 import * as tf from '@tensorflow/tfjs';
 import { Word, BBox } from '../models';
 import { adjustConfidence } from '../config';
+import { resolveAssetPath } from '../basePath';
 
-// Model URLs - served locally from public/models to avoid CORS issues
-const MODEL_BASE_URL = '/models';
-const DETECTION_MODEL_URL = `${MODEL_BASE_URL}/db_mobilenet_v2/model.json`;
-const RECOGNITION_MODEL_URL = `${MODEL_BASE_URL}/crnn_mobilenet_v2/model.json`;
+// Model paths - resolved at runtime with base URL for GitHub Pages
+function getDetectionModelUrl(): string {
+  return resolveAssetPath('models/db_mobilenet_v2/model.json');
+}
+function getRecognitionModelUrl(): string {
+  return resolveAssetPath('models/crnn_mobilenet_v2/model.json');
+}
 
 // Normalization constants
 const DET_MEAN = 0.785;
@@ -44,7 +48,7 @@ export async function loadModels(
   onProgress?.(0, 'Loading detection model...');
 
   try {
-    detectionModel = await tf.loadGraphModel(DETECTION_MODEL_URL);
+    detectionModel = await tf.loadGraphModel(getDetectionModelUrl());
     onProgress?.(0.4, 'Detection model loaded');
 
     // Warm up detection model
@@ -53,7 +57,7 @@ export async function loadModels(
     warmupDet.dispose();
     onProgress?.(0.5, 'Loading recognition model...');
 
-    recognitionModel = await tf.loadGraphModel(RECOGNITION_MODEL_URL);
+    recognitionModel = await tf.loadGraphModel(getRecognitionModelUrl());
     onProgress?.(0.9, 'Recognition model loaded');
 
     // Warm up recognition model (use executeAsync for dynamic ops)
