@@ -4,6 +4,7 @@
  */
 
 import { MultiSignalRanker } from './ranking.js';
+import { resolveAssetPath } from './basePath.js';
 
 export enum SanitizeStatus {
   SKIPPED = 'skipped',
@@ -193,7 +194,7 @@ export class Sanitizer {
     const names = ['english', 'names', 'medical', 'custom'];
     const loads = names.map(async (name) => {
       try {
-        const response = await fetch(`/dictionaries/${name}.json`);
+        const response = await fetch(resolveAssetPath(`dictionaries/${name}.json`));
         if (!response.ok) {
           console.warn(`Failed to load ${name}.json: ${response.statusText}`);
           return;

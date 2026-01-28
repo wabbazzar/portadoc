@@ -3,6 +3,8 @@
  * TypeScript port of src/portadoc/ranking.py
  */
 
+import { resolveAssetPath } from './basePath.js';
+
 export interface RankingConfig {
   enabled: boolean;
   weight: number;
@@ -38,15 +40,26 @@ export class FrequencyRanker {
   private frequencies: Map<string, number> = new Map();
   private maxFrequency = 1;
 
-  constructor(config: FrequencyConfig) {
+  constructor(config: FrequencyConfig, preloadedData?: Record<string, number>) {
     this.config = config;
+    if (preloadedData) {
+      for (const [word, freq] of Object.entries(preloadedData)) {
+        this.frequencies.set(word.toLowerCase(), freq);
+        this.maxFrequency = Math.max(this.maxFrequency, freq);
+      }
+    }
   }
 
   async load(): Promise<void> {
     if (!this.config.enabled) return;
 
+    // If data already preloaded (test environment), skip fetch
+    if (this.frequencies.size > 0) return;
+
     try {
-      const response = await fetch(this.config.source);
+      // Strip /public/ prefix - Vite serves public/ at root
+      const sourcePath = this.config.source.replace(/^\/public\//, '');
+      const response = await fetch(resolveAssetPath(sourcePath));
       if (!response.ok) {
         console.warn(`Failed to load frequency data: ${response.statusText}`);
         return;
@@ -118,15 +131,35 @@ export class BigramRanker {
   private bigrams: Map<string, number> = new Map();
   private unigramCounts: Map<string, number> = new Map();
 
-  constructor(config: BigramConfig) {
+  constructor(config: BigramConfig, preloadedData?: Record<string, number>) {
     this.config = config;
+    if (preloadedData) {
+      for (const [words, freq] of Object.entries(preloadedData)) {
+        const parts = words.split(' ');
+        if (parts.length === 2) {
+          const [w1, w2] = parts;
+          this.bigrams.set(`${w1.toLowerCase()} ${w2.toLowerCase()}`, freq);
+
+          // Track unigram counts for probability calculation
+          const w1Lower = w1.toLowerCase();
+          const w2Lower = w2.toLowerCase();
+          this.unigramCounts.set(w1Lower, (this.unigramCounts.get(w1Lower) ?? 0) + freq);
+          this.unigramCounts.set(w2Lower, (this.unigramCounts.get(w2Lower) ?? 0) + freq);
+        }
+      }
+    }
   }
 
   async load(): Promise<void> {
     if (!this.config.enabled) return;
 
+    // If data already preloaded (test environment), skip fetch
+    if (this.bigrams.size > 0) return;
+
     try {
-      const response = await fetch(this.config.source);
+      // Strip /public/ prefix - Vite serves public/ at root
+      const sourcePath = this.config.source.replace(/^\/public\//, '');
+      const response = await fetch(resolveAssetPath(sourcePath));
       if (!response.ok) {
         console.warn(`Failed to load bigram data: ${response.statusText}`);
         return;
@@ -204,15 +237,23 @@ export class OCRErrorModel {
   private config: OCRModelConfig;
   private confusions: Confusion[] = [];
 
-  constructor(config: OCRModelConfig) {
+  constructor(config: OCRModelConfig, preloadedData?: { confusions: Confusion[] }) {
     this.config = config;
+    if (preloadedData) {
+      this.confusions = preloadedData.confusions;
+    }
   }
 
   async load(): Promise<void> {
     if (!this.config.enabled) return;
 
+    // If data already preloaded (test environment), skip fetch
+    if (this.confusions.length > 0) return;
+
     try {
-      const response = await fetch(this.config.source);
+      // Strip /public/ prefix - Vite serves public/ at root
+      const sourcePath = this.config.source.replace(/^\/public\//, '');
+      const response = await fetch(resolveAssetPath(sourcePath));
       if (!response.ok) {
         console.warn(`Failed to load OCR confusion data: ${response.statusText}`);
         return;
@@ -316,14 +357,17 @@ export class MultiSignalRanker {
     frequencyConfig?: FrequencyConfig,
     documentConfig?: DocumentConfig,
     bigramConfig?: BigramConfig,
-    ocrConfig?: OCRModelConfig
+    ocrConfig?: OCRModelConfig,
+    preloadedFrequencies?: Record<string, number>,
+    preloadedBigrams?: Record<string, number>,
+    preloadedOcrConfusions?: { confusions: Confusion[] }
   ) {
     this.frequencyRanker = new FrequencyRanker(frequencyConfig ?? {
       enabled: true,
       weight: 1.0,
       source: '/public/data/frequencies.json',
       fallbackFrequency: 1,
-    });
+    }, preloadedFrequencies);
     this.documentRanker = new DocumentRanker(documentConfig ?? {
       enabled: true,
       weight: 0.3,
@@ -334,12 +378,12 @@ export class MultiSignalRanker {
       weight: 0.5,
       source: '/public/data/bigrams.json',
       window: 1,
-    });
+    }, preloadedBigrams);
     this.ocrRanker = new OCRErrorModel(ocrConfig ?? {
       enabled: true,
       weight: 0.4,
       source: '/public/data/ocr_confusions.json',
-    });
+    }, preloadedOcrConfusions);
   }
 
   async load(): Promise<void> {

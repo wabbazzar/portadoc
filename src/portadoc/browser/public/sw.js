@@ -3,14 +3,30 @@
  * Enables offline functionality and caches assets
  */
 
-const CACHE_NAME = 'portadoc-v1';
+const CACHE_NAME = 'portadoc-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/styles.css',
-  '/app.ts',
   '/manifest.json',
-  '/public/icon-192.svg',
+  '/icon-192.svg',
+  '/icon-512.svg',
+];
+
+// Data files for sanitization and ranking
+const DATA_ASSETS = [
+  '/dictionaries/english.json',
+  '/dictionaries/names.json',
+  '/dictionaries/medical.json',
+  '/dictionaries/custom.json',
+  '/data/frequencies.json',
+  '/data/bigrams.json',
+  '/data/ocr_confusions.json',
+];
+
+// docTR model files (larger, cache separately)
+const MODEL_ASSETS = [
+  '/models/db_mobilenet_v2/model.json',
+  '/models/crnn_mobilenet_v2/model.json',
 ];
 
 // External resources to cache
@@ -23,12 +39,31 @@ const EXTERNAL_ASSETS = [
 self.addEventListener('install', (event) => {
   console.log('[SW] Installing service worker...');
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    caches.open(CACHE_NAME).then(async (cache) => {
       console.log('[SW] Caching static assets');
-      return cache.addAll(STATIC_ASSETS).catch((err) => {
-        console.warn('[SW] Failed to cache some assets:', err);
-        // Don't fail install if some assets can't be cached (dev mode)
-      });
+
+      // Cache static assets (required)
+      try {
+        await cache.addAll(STATIC_ASSETS);
+      } catch (err) {
+        console.warn('[SW] Failed to cache static assets:', err);
+      }
+
+      // Cache data files (dictionaries, frequencies) - important for functionality
+      try {
+        await cache.addAll(DATA_ASSETS);
+        console.log('[SW] Cached data assets');
+      } catch (err) {
+        console.warn('[SW] Failed to cache data assets:', err);
+      }
+
+      // Cache model files (optional, large files)
+      try {
+        await cache.addAll(MODEL_ASSETS);
+        console.log('[SW] Cached model assets');
+      } catch (err) {
+        console.warn('[SW] Failed to cache model assets (expected in dev):', err);
+      }
     })
   );
   // Take over immediately

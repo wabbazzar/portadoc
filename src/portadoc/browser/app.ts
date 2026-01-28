@@ -566,7 +566,7 @@ async function handleExtract() {
     let doctrWords: Word[] = [];
 
     if (useTesseract) {
-      showProgress('Running Tesseract.js...');
+      updateProgress(5, 'Running Tesseract.js...');
       console.log('Starting Tesseract extraction...');
       tesseractWords = await extractWithTesseract(
         imageDataUrl,
@@ -582,7 +582,7 @@ async function handleExtract() {
     }
 
     if (useDoctr) {
-      showProgress('Loading docTR models...');
+      updateProgress(useTesseract ? 50 : 5, 'Loading docTR models...');
       const baseProgress = useTesseract ? 50 : 0;
       const progressRange = useTesseract ? 50 : 100;
       doctrWords = await extractWithDoctr(
@@ -597,7 +597,7 @@ async function handleExtract() {
     // Run pixel detection if enabled
     let pixelWords: Word[] = [];
     if (usePixel) {
-      showProgress('Running pixel detection...');
+      updateProgress(92, 'Running pixel detection...');
       console.log('Starting pixel detection...');
 
       // Get existing bboxes from OCR results to avoid overlap
@@ -639,7 +639,7 @@ async function handleExtract() {
     }
 
     // Harmonize or combine results
-    showProgress('Processing words...');
+    updateProgress(94, 'Processing words...');
     let allWords: ExtractedWord[];
 
     if (useTesseract && useDoctr) {
@@ -676,7 +676,7 @@ async function handleExtract() {
     }
 
     // Order words by reading order (with cluster info for visualization)
-    showProgress('Ordering words...');
+    updateProgress(96, 'Ordering words...');
     const orderingResult = orderWordsByReadingWithClusters(allWords);
 
     // Store cluster information for visualization
@@ -697,7 +697,7 @@ async function handleExtract() {
 
     // Sanitize OCR text if enabled
     if (sanitizeEnabled && sanitizer) {
-      showProgress('Sanitizing OCR text...');
+      updateProgress(97, 'Sanitizing OCR text...');
       const wordsForSanitize = extractedWords.map(w => ({
         text: w.text,
         confidence: w.confidence,
