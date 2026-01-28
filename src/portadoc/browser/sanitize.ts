@@ -632,10 +632,6 @@ export class Sanitizer {
     return null;
   }
 
-  private fuzzyMatch(word: string, maxDistance: number): FuzzyMatch[] {
-    return this.fuzzyMatchWithRanking(word, maxDistance, undefined, undefined);
-  }
-
   private fuzzyMatchWithRanking(
     word: string,
     maxDistance: number,

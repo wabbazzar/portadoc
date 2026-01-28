@@ -57,6 +57,14 @@ export interface SanitizeDetails {
   correctionScore: number;
   /** Dictionary that matched */
   matchedDictionary?: string;
+  /** Word frequency ranking factor */
+  frequencyFactor?: number;
+  /** Document frequency ranking factor */
+  documentFactor?: number;
+  /** Bigram context ranking factor */
+  bigramFactor?: number;
+  /** OCR confusion model ranking factor */
+  ocrFactor?: number;
 }
 
 export interface ExtractedWord extends Word {
