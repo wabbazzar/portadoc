@@ -48,6 +48,10 @@
           <input type="checkbox" id="use-sanitize" checked />
           <span class="engine-badge sanitized">S</span>
         </label>
+        <label title="Detect entities (names, dates, codes)">
+          <input type="checkbox" id="use-entity-detect" />
+          <span class="engine-badge entity">E</span>
+        </label>
       </div>
       <button id="extract-btn" class="primary" disabled>Extract</button>
       <div id="page-controls" class="hidden">
@@ -126,6 +130,10 @@
                 <input type="checkbox" id="highlight-harmonized" />
                 <span class="engine-badge harmonized">H</span>
               </label>
+              <label title="Highlight entities (redaction candidates)">
+                <input type="checkbox" id="highlight-entities" />
+                <span class="engine-badge entity">E</span>
+              </label>
             </div>
             <span class="filter-divider"></span>
             <label title="Show Reading Order Clusters">
@@ -178,6 +186,35 @@
         <div id="export-controls">
           <button id="export-csv">CSV</button>
           <button id="export-json">JSON</button>
+        </div>
+
+        <!-- Redaction Stats & Export (shown when entities detected) -->
+        <div id="redaction-section" class="hidden">
+          <div class="redaction-header">
+            <h4>Redaction</h4>
+            <span id="redaction-total" class="redaction-badge">0</span>
+          </div>
+          <div id="redaction-stats">
+            <span class="entity-stat name" title="Names detected">
+              <span class="entity-dot"></span>
+              <span class="entity-label">Names</span>
+              <span id="stat-names" class="entity-count">0</span>
+            </span>
+            <span class="entity-stat date" title="Dates detected">
+              <span class="entity-dot"></span>
+              <span class="entity-label">Dates</span>
+              <span id="stat-dates" class="entity-count">0</span>
+            </span>
+            <span class="entity-stat code" title="Codes detected">
+              <span class="entity-dot"></span>
+              <span class="entity-label">Codes</span>
+              <span id="stat-codes" class="entity-count">0</span>
+            </span>
+          </div>
+          <button id="export-redacted-pdf" class="redact-btn" disabled>
+            <span class="redact-icon">■</span>
+            Export Redacted PDF
+          </button>
         </div>
       </div>
 

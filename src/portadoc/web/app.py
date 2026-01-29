@@ -388,6 +388,137 @@ async def get_current_config():
     }
 
 
+class RedactRequest(BaseModel):
+    """Request body for redaction endpoint."""
+    csv_path: str
+    detect_names: bool = True
+    detect_dates: bool = True
+    detect_codes: bool = True
+    names_path: Optional[str] = None
+
+
+class ApplyRequest(BaseModel):
+    """Request body for apply redactions endpoint."""
+    pdf_path: str
+    csv_path: str
+    output_path: Optional[str] = None
+    color: str = "black"
+    preview: bool = False
+
+
+@router.post("/api/redact")
+async def redact_csv_endpoint(request: RedactRequest):
+    """Detect entities and mark words for redaction."""
+    from ..redact import redact_csv, get_redaction_stats
+
+    csv_path = Path(request.csv_path)
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail=f"CSV not found: {request.csv_path}")
+
+    names_path = Path(request.names_path) if request.names_path else None
+    if names_path and not names_path.exists():
+        raise HTTPException(status_code=404, detail=f"Names file not found: {request.names_path}")
+
+    try:
+        count = redact_csv(
+            csv_path,
+            output_csv=None,  # Overwrite input
+            names_path=names_path,
+            detect_names=request.detect_names,
+            detect_dates=request.detect_dates,
+            detect_codes=request.detect_codes,
+        )
+
+        stats = get_redaction_stats(csv_path)
+
+        # Reload words with new columns
+        words = load_words_from_csv(csv_path)
+
+        return {
+            "success": True,
+            "words": words,
+            "redacted_count": count,
+            "by_type": stats["by_type"],
+            "total_words": stats["total_words"],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/apply")
+async def apply_redactions_endpoint(request: ApplyRequest):
+    """Apply redactions to a PDF."""
+    from ..apply import apply_redactions, apply_redactions_preview
+
+    pdf_path = Path(request.pdf_path)
+    if not pdf_path.exists():
+        # Try in default directory
+        pdf_path = DEFAULT_PDF_DIR / request.pdf_path
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail=f"PDF not found: {request.pdf_path}")
+
+    csv_path = Path(request.csv_path)
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail=f"CSV not found: {request.csv_path}")
+
+    # Generate output path if not provided
+    if request.output_path:
+        output_path = Path(request.output_path)
+    else:
+        output_path = pdf_path.parent / f"{pdf_path.stem}_redacted.pdf"
+
+    # Map color names to RGB tuples
+    color_map = {
+        "black": (0, 0, 0),
+        "white": (1, 1, 1),
+        "red": (1, 0, 0),
+    }
+    rgb_color = color_map.get(request.color, (0, 0, 0))
+
+    try:
+        if request.preview:
+            count = apply_redactions_preview(
+                pdf_path,
+                csv_path,
+                output_path,
+                border_color=rgb_color,
+            )
+        else:
+            count = apply_redactions(
+                pdf_path,
+                csv_path,
+                output_path,
+                color=rgb_color,
+            )
+
+        return {
+            "success": True,
+            "redacted_count": count,
+            "output_path": str(output_path),
+            "preview": request.preview,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/redacted-pdf/{filename:path}")
+async def get_redacted_pdf(filename: str):
+    """Serve a redacted PDF file."""
+    pdf_path = Path(filename)
+    if not pdf_path.exists():
+        # Try in default directory
+        pdf_path = DEFAULT_PDF_DIR / filename
+
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail=f"Redacted PDF not found: {filename}")
+
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=pdf_path.name,
+    )
+
+
 def create_app(pdf_dir: Path = None, static_dir: Path = None) -> FastAPI:
     """Create the FastAPI application."""
     global DEFAULT_PDF_DIR

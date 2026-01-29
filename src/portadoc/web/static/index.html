@@ -20,6 +20,10 @@
                 Upload PDF
             </label>
             <button id="extract-btn" disabled>Extract</button>
+            <label class="toggle-btn" title="Detect entities (names, dates, codes)">
+                <input type="checkbox" id="use-entity-detect">
+                <span class="toggle-badge entity">E</span>
+            </label>
             <button id="file-info-btn" class="icon-btn hidden" title="View extraction info">ℹ</button>
             <button id="toggle-config-btn">Config</button>
         </div>
@@ -189,11 +193,41 @@
                                 <th>Source</th>
                                 <th>Status</th>
                                 <th>Conf</th>
+                                <th>Entity</th>
                             </tr>
                         </thead>
                         <tbody id="words-tbody">
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Redaction Section -->
+                <div id="redaction-section" class="hidden">
+                    <div class="redaction-header">
+                        <h4>Redaction</h4>
+                        <span id="redaction-total" class="redaction-badge">0</span>
+                    </div>
+                    <div id="redaction-stats">
+                        <span class="entity-stat name">
+                            <span class="entity-dot"></span>
+                            <span>Names</span>
+                            <span id="stat-names">0</span>
+                        </span>
+                        <span class="entity-stat date">
+                            <span class="entity-dot"></span>
+                            <span>Dates</span>
+                            <span id="stat-dates">0</span>
+                        </span>
+                        <span class="entity-stat code">
+                            <span class="entity-dot"></span>
+                            <span>Codes</span>
+                            <span id="stat-codes">0</span>
+                        </span>
+                    </div>
+                    <button id="apply-redactions-btn" class="redact-btn">
+                        <span class="redact-icon">■</span>
+                        Apply Redactions
+                    </button>
                 </div>
             </div>
 

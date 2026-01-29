@@ -68,3 +68,11 @@ export async function getPageDimensions(
   const viewport = page.getViewport({ scale });
   return { width: viewport.width, height: viewport.height };
 }
+
+/**
+ * Get the raw bytes of a PDF file.
+ * Used for exporting modified PDFs.
+ */
+export async function getPdfBytes(file: File): Promise<ArrayBuffer> {
+  return file.arrayBuffer();
+}

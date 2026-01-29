@@ -16,6 +16,7 @@ const state = {
     lastExtractionInfo: null, // { pdfPath, csvPath, wordCount }
     pageRotations: {}, // Page rotation angles from extraction (0, 90, 180, 270)
     uiDescriptions: {}, // Tooltip descriptions from config
+    entityStats: { total: 0, names: 0, dates: 0, codes: 0 }, // Redaction stats
 };
 
 // Status colors for bounding boxes
@@ -97,6 +98,9 @@ async function init() {
             document.getElementById('file-info-modal').classList.add('hidden');
         }
     });
+
+    // Redaction button
+    document.getElementById('apply-redactions-btn')?.addEventListener('click', applyRedactions);
 
     // Bbox canvas mouse events for hover
     bboxCanvas.style.pointerEvents = 'auto';
@@ -512,12 +516,17 @@ function renderWordList() {
         tr.dataset.wordId = word.word_id;
         tr.classList.add(`status-${word.status}`);
 
+        const entityBadge = word.entity
+            ? `<span class="entity-badge ${word.entity.toLowerCase()}">${word.entity}</span>`
+            : '-';
+
         tr.innerHTML = `
             <td>${word.word_id}</td>
             <td>${escapeHtml(word.text)}</td>
             <td>${word.source}</td>
             <td class="status-${word.status}">${word.status}</td>
             <td>${word.confidence.toFixed(1)}</td>
+            <td>${entityBadge}</td>
         `;
 
         tr.addEventListener('mouseenter', () => highlightWord(word.word_id));
@@ -704,6 +713,14 @@ async function onExtract() {
             // Show the info button
             document.getElementById('file-info-btn').classList.remove('hidden');
 
+            // Run entity detection if enabled
+            const useEntityDetect = document.getElementById('use-entity-detect')?.checked;
+            if (useEntityDetect) {
+                await runEntityDetection();
+            } else {
+                hideRedactionSection();
+            }
+
             renderWordList();
             renderBboxes();
             // Reload reading order after extraction
@@ -851,6 +868,102 @@ function initHorizontalResizer() {
             document.body.style.cursor = '';
         }
     });
+}
+
+// Entity detection and redaction functions
+async function runEntityDetection() {
+    if (!state.lastExtractionInfo?.csvPath) return;
+
+    try {
+        const response = await fetch('/api/redact', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                csv_path: state.lastExtractionInfo.csvPath,
+                detect_names: true,
+                detect_dates: true,
+                detect_codes: true,
+            }),
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Update words with entity info
+            state.words = data.words || state.words;
+            state.entityStats = {
+                total: data.redacted_count || 0,
+                names: data.by_type?.NAME || 0,
+                dates: data.by_type?.DATE || 0,
+                codes: data.by_type?.CODE || 0,
+            };
+            updateRedactionSection();
+            console.log(`Entity detection: ${state.entityStats.total} words marked for redaction`);
+        }
+    } catch (error) {
+        console.error('Entity detection failed:', error);
+    }
+}
+
+function updateRedactionSection() {
+    const section = document.getElementById('redaction-section');
+    if (state.entityStats.total > 0) {
+        section.classList.remove('hidden');
+        document.getElementById('redaction-total').textContent = state.entityStats.total;
+        document.getElementById('stat-names').textContent = state.entityStats.names;
+        document.getElementById('stat-dates').textContent = state.entityStats.dates;
+        document.getElementById('stat-codes').textContent = state.entityStats.codes;
+    } else {
+        section.classList.add('hidden');
+    }
+}
+
+function hideRedactionSection() {
+    document.getElementById('redaction-section')?.classList.add('hidden');
+    state.entityStats = { total: 0, names: 0, dates: 0, codes: 0 };
+}
+
+async function applyRedactions() {
+    if (!state.currentPdfPath || !state.lastExtractionInfo?.csvPath) {
+        alert('No PDF or extraction available');
+        return;
+    }
+
+    try {
+        const btn = document.getElementById('apply-redactions-btn');
+        btn.disabled = true;
+        btn.textContent = 'Applying...';
+
+        const response = await fetch('/api/apply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                pdf_path: state.currentPdfPath,
+                csv_path: state.lastExtractionInfo.csvPath,
+            }),
+        });
+
+        if (response.ok) {
+            // Download the redacted PDF
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = state.currentPdfPath.replace('.pdf', '_redacted.pdf').split('/').pop();
+            a.click();
+            URL.revokeObjectURL(url);
+        } else {
+            const data = await response.json();
+            alert('Failed to apply redactions: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Apply redactions failed:', error);
+        alert('Failed to apply redactions: ' + error.message);
+    } finally {
+        const btn = document.getElementById('apply-redactions-btn');
+        btn.disabled = false;
+        btn.textContent = '■ Apply Redactions';
+    }
 }
 
 // Show file info modal with CSV preview

@@ -4,7 +4,7 @@
  */
 
 import { Word, ExtractedWord, BBox, HarmonizeDetails, SanitizeDetails } from './models';
-import { loadPdf, renderPage, getPdfPageCount } from './pdf-loader';
+import { loadPdf, renderPage, getPdfPageCount, getPdfBytes } from './pdf-loader';
 import { extractWithTesseract } from './ocr/tesseract';
 import { extractWithDoctr } from './ocr/doctr';
 import { orderWordsByReadingWithClusters, ClusterInfo } from './geometric-clustering';
@@ -12,6 +12,8 @@ import { harmonizeWords } from './harmonize';
 import { detectMissedContent, runSanityCheck, SANITY_CHECK_EXPECTED_BBOX } from './detection';
 import { loadConfig } from './config';
 import { Sanitizer } from './sanitize';
+import { EntityDetector } from './redact';
+import { exportRedactedPdfFromWords, downloadPdf, getRedactionStats } from './apply';
 
 // State
 let currentFile: File | null = null;
@@ -28,6 +30,9 @@ let highlightedClusterId: number | null = null;
 let isProcessingFile = false; // Prevent double file processing
 let sanitizer: Sanitizer | null = null;
 let sanitizeEnabled = false;
+let entityDetector: EntityDetector | null = null;
+let entityDetectEnabled = false;
+let originalPdfBytes: ArrayBuffer | null = null; // Store original PDF for redaction export
 let canvasNaturalWidth = 0; // Store natural canvas dimensions for scaling
 let canvasNaturalHeight = 0;
 // Detect touch device - tooltips are disabled on touch to avoid clutter
@@ -68,18 +73,27 @@ const showPixelCheckbox = document.getElementById('show-pixel') as HTMLInputElem
 const showClustersCheckbox = document.getElementById('show-clusters') as HTMLInputElement;
 const highlightSanitizedCheckbox = document.getElementById('highlight-sanitized') as HTMLInputElement;
 const highlightHarmonizedCheckbox = document.getElementById('highlight-harmonized') as HTMLInputElement;
+const highlightEntitiesCheckbox = document.getElementById('highlight-entities') as HTMLInputElement;
+const useEntityDetectCheckbox = document.getElementById('use-entity-detect') as HTMLInputElement;
+const exportRedactedPdfBtn = document.getElementById('export-redacted-pdf') as HTMLButtonElement;
 const readingOrderContent = document.getElementById('reading-order-content')!;
 const clusterTooltip = document.getElementById('cluster-tooltip')!;
 const horizontalResizer = document.getElementById('horizontal-resizer')!;
 const wordDetailsModal = document.getElementById('word-details-modal')!;
 const wordDetailsBody = document.getElementById('word-details-body')!;
 const closeDetailsBtn = document.getElementById('close-details')!;
+const redactionSection = document.getElementById('redaction-section')!;
+const redactionTotal = document.getElementById('redaction-total')!;
+const statNames = document.getElementById('stat-names')!;
+const statDates = document.getElementById('stat-dates')!;
+const statCodes = document.getElementById('stat-codes')!;
 
 // Initialize
 async function init() {
   // Load config first
   await loadConfig();
   await initSanitizer();
+  await initEntityDetector();
   setupEventListeners();
   setupOverlayScaling();
 }
@@ -132,6 +146,20 @@ function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): (.
     clearTimeout(timeoutId);
     timeoutId = setTimeout(() => fn.apply(this, args), ms);
   };
+}
+
+async function initEntityDetector() {
+  try {
+    entityDetector = new EntityDetector({
+      detectNames: true,
+      detectDates: true,
+      detectCodes: true,
+    });
+    await entityDetector.loadNames();
+    console.log(`Entity detector initialized (${entityDetector.getNameCount()} names loaded)`);
+  } catch (err) {
+    console.error('Failed to initialize entity detector:', err);
+  }
 }
 
 async function initSanitizer() {
@@ -311,6 +339,23 @@ function setupEventListeners() {
     });
   }
 
+  // Entity detection toggle
+  if (useEntityDetectCheckbox) {
+    entityDetectEnabled = useEntityDetectCheckbox.checked;
+    useEntityDetectCheckbox.addEventListener('change', () => {
+      entityDetectEnabled = useEntityDetectCheckbox.checked;
+    });
+  }
+
+  // Highlight entities toggle
+  highlightEntitiesCheckbox?.addEventListener('change', () => {
+    renderBboxes();
+    renderWordsList();
+  });
+
+  // Export redacted PDF
+  exportRedactedPdfBtn?.addEventListener('click', handleExportRedactedPdf);
+
   // Ranking controls
   setupRankingControls();
 
@@ -429,12 +474,15 @@ async function processFile(file: File) {
   try {
     if (file.type === 'application/pdf') {
       updateProgress(10, 'Parsing PDF...');
+      // Store original bytes for later redaction export
+      originalPdfBytes = await getPdfBytes(file);
       pdfDocument = await loadPdf(file);
       totalPages = getPdfPageCount(pdfDocument);
       updateProgress(50, `Loaded ${totalPages} page${totalPages > 1 ? 's' : ''}`);
     } else {
       // Image file - treat as single page
       pdfDocument = null;
+      originalPdfBytes = null;
       totalPages = 1;
       updateProgress(50, 'Image loaded');
     }
@@ -722,6 +770,29 @@ async function handleExtract() {
       }
     }
 
+    // Run entity detection if enabled
+    if (entityDetectEnabled && entityDetector && entityDetector.isLoaded()) {
+      updateProgress(98, 'Detecting entities...');
+      const texts = extractedWords.map(w => w.text);
+      const detections = entityDetector.detectBatch(texts);
+
+      let redactCount = 0;
+      for (let i = 0; i < extractedWords.length; i++) {
+        const detection = detections[i];
+        extractedWords[i].entity = detection.entityType;
+        extractedWords[i].redact = detection.redact;
+        if (detection.redact) redactCount++;
+      }
+
+      console.log(`Entity detection: ${redactCount} words marked for redaction`);
+
+      // Update redaction stats UI
+      updateRedactionStats();
+    } else {
+      // Hide redaction section if entity detection is off
+      redactionSection?.classList.add('hidden');
+    }
+
     renderBboxes();
     renderWordsList();
 
@@ -753,7 +824,8 @@ function getVisibleEngines(): Set<string> {
  * A word is visible if:
  * - ANY of its sources is in the visible engines set, OR
  * - Sanitize highlight is on and word has sanitize details, OR
- * - Harmonize highlight is on and word is multi-source
+ * - Harmonize highlight is on and word is multi-source, OR
+ * - Entity highlight is on and word has entity type
  */
 function shouldShowWord(word: ExtractedWord, visibleEngines: Set<string>): boolean {
   const sources = word.sources && word.sources.length > 0 ? word.sources : [word.engine];
@@ -762,12 +834,80 @@ function shouldShowWord(word: ExtractedWord, visibleEngines: Set<string>): boole
   // Check if highlight modes should force visibility
   const highlightSanitized = highlightSanitizedCheckbox?.checked ?? false;
   const highlightHarmonized = highlightHarmonizedCheckbox?.checked ?? false;
+  const highlightEntities = highlightEntitiesCheckbox?.checked ?? false;
 
   const sanitizeForceShow = highlightSanitized && word.sanitizeDetails &&
     (word.sanitizeDetails.status === 'corrected' || word.sanitizeDetails.status === 'context' || word.sanitizeDetails.status === 'uncertain');
   const harmonizeForceShow = highlightHarmonized && sources.length > 1;
+  const entityForceShow = highlightEntities && word.entity != null && word.entity !== '';
 
-  return sourceVisible || sanitizeForceShow || harmonizeForceShow;
+  return sourceVisible || !!sanitizeForceShow || harmonizeForceShow || entityForceShow;
+}
+
+/**
+ * Update the redaction stats UI based on current extracted words.
+ */
+function updateRedactionStats() {
+  const stats = getRedactionStats(extractedWords);
+
+  if (stats.redacted > 0) {
+    redactionSection?.classList.remove('hidden');
+    if (redactionTotal) redactionTotal.textContent = String(stats.redacted);
+    if (statNames) statNames.textContent = String(stats.byType['NAME'] || 0);
+    if (statDates) statDates.textContent = String(stats.byType['DATE'] || 0);
+    if (statCodes) statCodes.textContent = String(stats.byType['CODE'] || 0);
+
+    // Enable export button if we have PDF bytes
+    if (exportRedactedPdfBtn) {
+      exportRedactedPdfBtn.disabled = !originalPdfBytes;
+    }
+  } else {
+    redactionSection?.classList.add('hidden');
+  }
+}
+
+/**
+ * Handle export of redacted PDF.
+ */
+async function handleExportRedactedPdf() {
+  if (!originalPdfBytes) {
+    alert('No PDF loaded for redaction');
+    return;
+  }
+
+  // Check if we have any redactions
+  const stats = getRedactionStats(extractedWords);
+  if (stats.redacted === 0) {
+    alert('No words marked for redaction. Enable entity detection and re-extract.');
+    return;
+  }
+
+  try {
+    showProgress('Exporting redacted PDF...');
+    updateProgress(50, 'Applying redactions...');
+
+    const redactedPdf = await exportRedactedPdfFromWords(
+      originalPdfBytes,
+      extractedWords,
+      [0, 0, 0] // Black
+    );
+
+    updateProgress(100, 'Download starting...');
+
+    // Generate filename
+    const originalName = currentFile?.name || 'document.pdf';
+    const baseName = originalName.replace(/\.pdf$/i, '');
+    const redactedName = `${baseName}_redacted.pdf`;
+
+    downloadPdf(redactedPdf, redactedName);
+
+    hideProgress();
+    console.log(`Exported redacted PDF: ${stats.redacted} redactions applied`);
+  } catch (error) {
+    console.error('Error exporting redacted PDF:', error);
+    alert('Error exporting redacted PDF: ' + (error as Error).message);
+    hideProgress();
+  }
 }
 
 function renderBboxes() {
@@ -851,6 +991,16 @@ function renderBboxes() {
     // Harmonization highlight indicators
     if (highlightHarmonized && isMultiSource) {
       div.classList.add('harmonize-matched');
+    }
+
+    // Entity highlight indicators
+    const highlightEntities = highlightEntitiesCheckbox?.checked ?? false;
+    if (highlightEntities && word.entity && word.entity !== '') {
+      div.classList.add('entity-detected');
+      div.classList.add(`entity-${word.entity.toLowerCase()}`);
+      if (word.redact) {
+        div.classList.add('entity-redact');
+      }
     }
 
     div.style.left = word.bbox.x0 + 'px';
@@ -1024,9 +1174,23 @@ function renderWordsList() {
       div.classList.add('harmonize-matched');
     }
 
+    // Add entity highlight classes
+    const highlightEntities = highlightEntitiesCheckbox?.checked ?? false;
+    if (highlightEntities && word.entity && word.entity !== '') {
+      div.classList.add(`entity-${word.entity.toLowerCase()}`);
+    }
+
     const textSpan = document.createElement('span');
     textSpan.className = 'word-text';
     textSpan.textContent = word.text;
+
+    // Add entity badge if entity detected
+    let entityBadge: HTMLSpanElement | null = null;
+    if (word.entity && word.entity !== '') {
+      entityBadge = document.createElement('span');
+      entityBadge.className = `word-entity-badge ${word.entity.toLowerCase()}`;
+      entityBadge.textContent = word.entity;
+    }
 
     const engineSpan = document.createElement('span');
     // Smart badge: show based on visible sources
@@ -1065,6 +1229,7 @@ function renderWordsList() {
     }
 
     div.appendChild(textSpan);
+    if (entityBadge) div.appendChild(entityBadge);
     div.appendChild(engineSpan);
     div.addEventListener('click', () => selectWord(word.wordId));
     div.addEventListener('mouseenter', () => highlightWordFromList(word.wordId));
@@ -1116,8 +1281,20 @@ function highlightWord(wordId: number, event?: MouseEvent) {
   if (event && !isTouchDevice) {
     const word = extractedWords.find((w) => w.wordId === wordId);
     if (word && tooltip) {
-      // Build tooltip content with sanitization details
+      // Build tooltip content with entity and sanitization details
       let html = `<div class="tooltip-text">${escapeHtml(word.text)}</div>`;
+
+      // Show entity type if detected
+      if (word.entity && word.entity !== '') {
+        const entityClass = word.entity.toLowerCase();
+        html += `<div class="tooltip-entity ${entityClass}">`;
+        html += `<span class="entity-indicator"></span>`;
+        html += `<span class="entity-type">${word.entity}</span>`;
+        if (word.redact) {
+          html += ` <span class="redact-mark">■ redact</span>`;
+        }
+        html += `</div>`;
+      }
 
       if (word.sanitizeDetails) {
         const s = word.sanitizeDetails;
@@ -1240,11 +1417,13 @@ function hideProgress() {
 }
 
 function exportCsv() {
-  const rows = ['page,word_id,text,x0,y0,x1,y1,engine,confidence'];
+  const rows = ['page,word_id,text,x0,y0,x1,y1,engine,confidence,entity,redact'];
   for (const word of extractedWords) {
     const text = word.text.includes(',') ? `"${word.text}"` : word.text;
+    const entity = word.entity || '';
+    const redact = word.redact ? 'true' : 'false';
     rows.push(
-      `${word.page},${word.wordId},${text},${word.bbox.x0},${word.bbox.y0},${word.bbox.x1},${word.bbox.y1},${word.engine},${word.confidence}`
+      `${word.page},${word.wordId},${text},${word.bbox.x0},${word.bbox.y0},${word.bbox.x1},${word.bbox.y1},${word.engine},${word.confidence},${entity},${redact}`
     );
   }
   downloadFile(rows.join('\n'), 'portadoc-export.csv', 'text/csv');
@@ -1616,6 +1795,9 @@ function showWordDetails(word: ExtractedWord) {
   // Build sanitization section if available
   const sanitizeHtml = word.sanitizeDetails ? buildSanitizeSection(word.sanitizeDetails, word.text) : '';
 
+  // Build entity section if detected
+  const entityHtml = word.entity ? buildEntitySection(word.entity, word.redact ?? false) : '';
+
   wordDetailsBody.innerHTML = `
     <div class="detail-row">
       <span class="detail-label">Word ID:</span>
@@ -1652,9 +1834,38 @@ function showWordDetails(word: ExtractedWord) {
     </div>
     ${harmonizeHtml}
     ${sanitizeHtml}
+    ${entityHtml}
   `;
 
   wordDetailsModal.classList.remove('hidden');
+}
+
+function buildEntitySection(entity: string, redact: boolean): string {
+  const entityLabels: Record<string, string> = {
+    'NAME': 'Personal Name',
+    'DATE': 'Date',
+    'CODE': 'Numeric Code',
+  };
+
+  const entityDescriptions: Record<string, string> = {
+    'NAME': 'Matched against names dictionary (case-insensitive)',
+    'DATE': 'Detected date pattern (MM/DD/YY, YYYY-MM-DD, etc.)',
+    'CODE': 'Numeric identifier (phone, SSN, MRN, etc.)',
+  };
+
+  const label = entityLabels[entity] || entity;
+  const description = entityDescriptions[entity] || '';
+
+  return `
+    <div class="entity-section">
+      <div class="entity-header">Entity Detection</div>
+      <div class="entity-type-row">
+        <span class="entity-type-badge ${entity.toLowerCase()}">${label}</span>
+        ${redact ? '<span class="redact-indicator">■ Marked for redaction</span>' : ''}
+      </div>
+      <div class="entity-description">${description}</div>
+    </div>
+  `;
 }
 
 function closeWordDetails() {
@@ -1731,6 +1942,12 @@ function renderReadingOrder() {
       }
       if (highlightHarmonized && isMultiSource) {
         highlightClasses += ' harmonize-matched';
+      }
+
+      // Add entity highlight classes
+      const highlightEntities = highlightEntitiesCheckbox?.checked ?? false;
+      if (highlightEntities && word.entity && word.entity !== '') {
+        highlightClasses += ` entity-${word.entity.toLowerCase()}`;
       }
 
       html += `<span class="reading-word ${styleClass}${lowConfClass}${highlightClasses}" data-word-id="${word.wordId}">${escapeHtml(word.text)}</span>`;

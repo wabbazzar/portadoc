@@ -79,6 +79,10 @@ export interface ExtractedWord extends Word {
   sanitized?: boolean;
   /** Detailed sanitization info */
   sanitizeDetails?: SanitizeDetails;
+  /** Entity detected (NAME, DATE, CODE, or empty) */
+  entity?: string;
+  /** Whether this word should be redacted */
+  redact?: boolean;
 }
 
 export interface OcrResult {

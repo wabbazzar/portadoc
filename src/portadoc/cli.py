@@ -778,5 +778,164 @@ def sanitize_check():
             click.echo(f"  {name:12} NOT FOUND")
 
 
+@main.command()
+@click.argument("input_csv", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "-o", "--output",
+    type=click.Path(path_type=Path),
+    help="Output file path (default: overwrite input)"
+)
+@click.option(
+    "--names",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to custom names dictionary"
+)
+@click.option(
+    "--no-names",
+    is_flag=True,
+    help="Skip name detection"
+)
+@click.option(
+    "--no-dates",
+    is_flag=True,
+    help="Skip date detection"
+)
+@click.option(
+    "--no-codes",
+    is_flag=True,
+    help="Skip code detection"
+)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    help="Show detailed statistics"
+)
+def redact(
+    input_csv: Path,
+    output: Path | None,
+    names: Path | None,
+    no_names: bool,
+    no_dates: bool,
+    no_codes: bool,
+    verbose: bool,
+):
+    """
+    Detect entities and mark words for redaction.
+
+    INPUT_CSV is a CSV file from 'portadoc extract' command.
+
+    Appends 'entity_type' and 'redact' columns to the CSV.
+    Detects: NAME (dictionary), DATE (regex), CODE (regex).
+    """
+    from .redact import redact_csv, get_redaction_stats
+
+    try:
+        count = redact_csv(
+            input_csv,
+            output_csv=output,
+            names_path=names,
+            detect_names=not no_names,
+            detect_dates=not no_dates,
+            detect_codes=not no_codes,
+        )
+
+        out_path = output if output else input_csv
+
+        if verbose:
+            stats = get_redaction_stats(out_path)
+            click.echo(f"Processed {stats['total_words']} words")
+            click.echo(f"Marked for redaction: {stats['redacted_count']}")
+            click.echo(f"  Names: {stats['by_type']['NAME']}")
+            click.echo(f"  Dates: {stats['by_type']['DATE']}")
+            click.echo(f"  Codes: {stats['by_type']['CODE']}")
+        else:
+            click.echo(f"Marked {count} words for redaction", err=True)
+
+        if output:
+            click.echo(f"Output written to {output}", err=True)
+
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@main.command()
+@click.argument("pdf_path", type=click.Path(exists=True, path_type=Path))
+@click.argument("words_csv", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "-o", "--output",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Output PDF path (required)"
+)
+@click.option(
+    "--color",
+    type=click.Choice(["black", "white", "red"]),
+    default="black",
+    help="Redaction color (default: black)"
+)
+@click.option(
+    "--preview",
+    is_flag=True,
+    help="Draw outlines instead of filled boxes (for review)"
+)
+@click.option(
+    "--padding",
+    type=float,
+    default=0,
+    help="Extra padding around boxes in points"
+)
+def apply(
+    pdf_path: Path,
+    words_csv: Path,
+    output: Path,
+    color: str,
+    preview: bool,
+    padding: float,
+):
+    """
+    Apply redactions to a PDF.
+
+    PDF_PATH is the original PDF file.
+    WORDS_CSV is a CSV file with 'redact' column (from 'portadoc redact').
+
+    Draws filled rectangles over words marked with redact=true.
+    """
+    from .apply import apply_redactions, apply_redactions_preview
+
+    # Map color names to RGB tuples
+    color_map = {
+        "black": (0, 0, 0),
+        "white": (1, 1, 1),
+        "red": (1, 0, 0),
+    }
+    rgb_color = color_map.get(color, (0, 0, 0))
+
+    try:
+        if preview:
+            count = apply_redactions_preview(
+                pdf_path,
+                words_csv,
+                output,
+                border_color=rgb_color,
+            )
+            click.echo(f"Preview: marked {count} redaction boxes", err=True)
+        else:
+            count = apply_redactions(
+                pdf_path,
+                words_csv,
+                output,
+                color=rgb_color,
+                padding=padding,
+            )
+            click.echo(f"Applied {count} redactions", err=True)
+
+        click.echo(f"Output written to {output}", err=True)
+
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()
