@@ -21,6 +21,9 @@ import sys, json, re, csv, argparse
 from pathlib import Path
 from collections import Counter, defaultdict
 
+# OCR-aware canonicalization (Levenshtein-clustered merge for EMAIL + PERSON)
+import canonicalize
+
 
 def normalize_text(text: str, label: str) -> str:
     t = text.replace('##', '').strip()
@@ -90,6 +93,14 @@ def main():
                 slot['max_score'] = max(slot['max_score'], e['score'])
                 n_hits += 1
 
+    # Canonicalize EMAIL + name-flavored labels before ranking
+    for label in list(counts.keys()):
+        items = counts[label]
+        if label in ('EMAIL', 'EMAIL_ADDRESS'):
+            counts[label] = canonicalize.cluster_emails(dict(items))
+        elif label in ('GIVENNAME', 'SURNAME', 'PERSON', 'NAME'):
+            counts[label] = canonicalize.cluster_persons(dict(items))
+
     # Serialize
     rankings = {
         'n_documents_scanned': n_docs,
@@ -109,6 +120,7 @@ def main():
                     'sample_doc_ids': sorted(v['docs'])[:5],
                     'datasets': dict(v['datasets']),
                     'max_score': round(v['max_score'], 3),
+                    'ocr_variants': v.get('ocr_variants', []),
                 }
                 for text, v in ranked[:args.top]
             ],
