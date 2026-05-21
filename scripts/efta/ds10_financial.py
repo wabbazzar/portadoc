@@ -107,6 +107,17 @@ BANKER_LASTNAME_DENYLIST = {
     'And', 'The', 'Of', 'For', 'With', 'From', 'Subject',
     'Fund', 'Group', 'Holdings', 'Partners', 'Bank', 'Company', 'Services',
     'Date', 'Time', 'Page', 'Note', 'Attn', 'Re',
+    # Day names (catches "Monday, October" etc)
+    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+    # Column headings observed in statements
+    'Checks', 'Deposits', 'Withdrawals', 'Balance', 'Total', 'Amount',
+    'Description', 'Reference', 'Type', 'Category', 'Class',
+}
+
+# Month names (catches "Thursday, October" — match in firstname slot too)
+BANKER_FIRSTNAME_DENYLIST_MONTHS = {
+    'January','February','March','April','May','June','July',
+    'August','September','October','November','December',
 }
 
 
@@ -115,10 +126,10 @@ def extract(text: str):
     out = defaultdict(list)
     for m in MONEY_RE.finditer(text):
         v = m.group(0).strip()
-        # Drop trivial / zero amounts — $0, $1, $0.00, $1.00 etc. are noise from
-        # financial-doc templates (balance fields with zero values).
-        if re.match(r'^\$?[01](?:\.0+)?$', v): continue
-        if v in ('$0.00','$0','$1.00','$1','$0.0','$1.0'): continue
+        # Drop trivial amounts: single-digit dollars are typically OCR noise from
+        # template fields, page numbers, etc. Real Epstein transactions are ≥ $100.
+        if re.match(r'^\$?\d{1,2}(?:\.\d{1,2})?$', v): continue
+        if v in ('$0.00','$0','$1.00','$1','$0.0','$1.0','$100','$1000'): continue
         out['money'].append(v)
     for m in ENTITY_RE.finditer(text):
         ent = re.sub(r'\s+', ' ', m.group(1).strip())
@@ -129,6 +140,7 @@ def extract(text: str):
         last, first, mi = m.group(1), m.group(2), m.group(3)
         if last in BANKER_LASTNAME_DENYLIST: continue
         if first in BANKER_FIRSTNAME_DENYLIST: continue
+        if first in BANKER_FIRSTNAME_DENYLIST_MONTHS: continue
         full = f'{last}, {first}'
         if mi:
             full += f' {mi}'
