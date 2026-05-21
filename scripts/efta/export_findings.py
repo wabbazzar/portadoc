@@ -227,19 +227,31 @@ def main():
 
     pages = []
 
-    # PAGE 1: top names by full-corpus grep (preferred over NER which is partial)
+    # PAGE 1: NER-discovered top names — Piiranha tags GIVENNAME + SURNAME
+    # across the text-rich subset (tagworthy: court docs + emails + estate, no DS10).
+    # This is the proper NER output, not the curated alias list.
+    p = page_names_top20(rank, max(args.per_page, 50))
+    if p:
+        p['title'] = 'Top names discovered by NER (Piiranha PERSON tags)'
+        p['subtitle'] = f"{rank.get('n_documents_scanned','?')} text-rich docs tagged · merged GIVENNAME + SURNAME · OCR fuzzy-merged (Levenshtein/soundex)"
+        p['explainer'] = "Names extracted from the corpus by the Piiranha-v1 PII NER model (DeBERTa-v3 fine-tune). The model finds person-name spans in text WITHOUT a pre-curated list — it discovers names rather than checking for known ones. Counts here are over the ~909-doc text-rich subset (court docs, grand jury transcripts, personal-correspondence emails, House Oversight estate bundles — DS10 financial statements excluded). For cross-corpus (173K) counts of journalist-cited names, see the 'Top names — curated grep' page below."
+        pages.append(p)
+
+    # PAGE 2: curated grep across FULL corpus (cross-check for known names — has
+    # much bigger counts because it includes DS10's 158K financial docs, where
+    # NER doesn't add value beyond the already-known names).
     if names_full and names_full.get('rows'):
         top = names_full['rows']
-        per_page = max(args.per_page, 50)  # show more — user wanted full ranking
+        per_page = max(args.per_page, 50)
         for i in range(0, min(len(top), per_page * 3), per_page):
             chunk = top[i:i+per_page]
             pages.append({
                 'kind': 'names_grep',
                 'page': i // per_page + 1,
-                'title': 'Top names by mention count (full-corpus grep)' + (
+                'title': 'Top names — curated grep over full corpus' + (
                     f' — page {i//per_page+1}' if i > 0 else ''),
-                'subtitle': f'{names_full.get("n_documents_scanned",0)} docs scanned. Curated alias list; case-insensitive word-boundary regex.',
-                'explainer': 'Counts mentions of each named entity across the FULL corpus (~173K docs). Uses a curated alias list (e.g. "Maxwell" matches "Ghislaine Maxwell", "G. Maxwell", "GM"). Sorted by number of distinct documents containing a mention.',
+                'subtitle': f'{names_full.get("n_documents_scanned",0)} docs scanned (incl. DS10). Curated alias list of ~70 known Epstein-network names.',
+                'explainer': 'Counts mentions of a CURATED list of ~70 known Epstein-network names (politicians, lawyers, co-conspirators, banks) across the FULL 173K-doc corpus including DS10\'s 158K financial statements. Use this for cross-corpus quantity of already-known names. To DISCOVER new names without a pre-list, see the NER page above.',
                 'rows': [{
                     'rank': i+j+1, 'text': r['name'], 'count': r['mentions'],
                     'docs': r['docs'], 'datasets': r['datasets'],
