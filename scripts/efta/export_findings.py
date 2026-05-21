@@ -319,9 +319,11 @@ def main():
                 'explainer': 'Phrases that named journalists / press releases have publicly quoted from these EFTA documents. Each entry shows where we found that exact phrase in our locally-mirrored copy. The blockquote is verbatim — same text reporters were quoting.',
                 'rows': [{
                     'rank': i+1, 'text': p['phrase'], 'count': p['n_total_hits'],
-                    'docs': p['n_docs'], 'note': p['source'], 'samples': p['samples'],
-                    # Aggregate sample datasets so the filter can drop this row when
-                    # all of its source-samples are in a hidden bucket.
+                    'docs': p['n_docs'],
+                    'note': p['source'],
+                    'url': p.get('url', ''),
+                    'significance': p.get('significance', ''),
+                    'samples': p['samples'],
                     'datasets': {
                         ds: sum(1 for s in (p.get('samples') or []) if s.get('dataset') == ds)
                         for ds in {s.get('dataset') for s in (p.get('samples') or []) if s.get('dataset')}
@@ -468,7 +470,7 @@ def main():
         'names_grep': 'Counts mentions of each named entity across the FULL corpus (~173K docs). Uses a curated alias list (e.g. "Maxwell" matches "Ghislaine Maxwell", "G. Maxwell", "GM"). Sorted by distinct documents containing a mention.',
         'topic_search': 'Per-match topic search across the full corpus. Each row is ONE hit (not aggregate) with the message date, source doc id, the matched phrase, and surrounding context.',
         'verbatim_quote': 'Phrases reporters have publicly quoted from the EFTA release. Blockquotes are verbatim from our local copy.',
-        'press_recreate': 'Counts of journalist-cited names and phrases across the full corpus. Each row links to its source (which article first surfaced the quote/name).',
+        'press_recreate': 'Counts of journalist-cited names and phrases across the full corpus. The "source" column is a short citation only — NOT a clickable URL. (For phrases with real article links + significance blurbs, see the Verbatim press quotes page above.)',
         'codeword_top': 'Documented Epstein-network code language from court filings + journalist reporting. Counts the literal terms across the corpus.',
         'doc_dates_year': 'Each document gets ONE canonical date via a priority chain: email Sent header > police report date > grand-jury heading > first body date > bare-year fallback. Bar shows how many documents are from each year.',
         'mention_dates_year': 'Every date-shaped string in document bodies. Per-doc deduplicated, then bucketed by year. Shows what years the corpus REFERS TO (vs. what years it was WRITTEN IN, see "Doc dates" page).',
