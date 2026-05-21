@@ -184,6 +184,7 @@ def main():
         'docs': set(),
         'by_dataset': Counter(),
         'by_year': Counter(),
+        'by_year_dataset': defaultdict(Counter),
         'samples': [],
         'sample_seen_docs': set(),
         'wiki': {'url': f'https://en.wikipedia.org/wiki/{wiki_slug(n)}',
@@ -215,7 +216,10 @@ def main():
                 p['by_dataset'][ds] += hits
                 if doc_date:
                     yr = doc_date[:4]
-                    if yr.isdigit(): p['by_year'][int(yr)] += 1
+                    if yr.isdigit():
+                        yr_i = int(yr)
+                        p['by_year'][yr_i] += 1
+                        p['by_year_dataset'][yr_i][ds] += 1
                 if doc_id not in p['sample_seen_docs'] and len(p['samples']) < args.max_samples:
                     start = max(0, (first_idx or 0) - 100)
                     end = min(len(text), (first_idx or 0) + 250)
@@ -239,6 +243,8 @@ def main():
             'docs': len(p['docs']),
             'by_dataset': dict(p['by_dataset']),
             'by_year': dict(sorted(p['by_year'].items())),
+            'by_year_dataset': {y: dict(p['by_year_dataset'][y])
+                                for y in sorted(p['by_year_dataset'].keys())},
             'samples': p['samples'],
             'wiki': p['wiki'],
         })
