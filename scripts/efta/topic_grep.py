@@ -212,18 +212,26 @@ def main():
                                 'source': rec.get('source',''),
                             })
 
-    # Serialize — sort matches by date (None at end), aggregate by year
+    # Serialize — sort matches by date (None at end), aggregate by year (and by dataset)
     out_topics = []
     for label, slot in per_topic.items():
         slot['matches'].sort(key=lambda r: (r['date'] is None, r['date'] or ''))
-        by_year = Counter()
+        # Per-(year, dataset) breakdown so the viewer can recompute
+        # year totals when the user filters specific datasets off.
+        by_year_dataset: dict[int, Counter] = {}
         for m in slot['matches']:
             if m['date']:
                 yr = m['date'][:4]
                 if yr.isdigit() and 1990 <= int(yr) <= 2030:
-                    by_year[int(yr)] += 1
-        by_year_sorted = dict(sorted(by_year.items()))
-        n_dated = sum(by_year.values())
+                    y = int(yr)
+                    by_year_dataset.setdefault(y, Counter())[m['dataset']] += 1
+        # Keep by_year for backward compat; derive it from the nested counter
+        # so the two views are guaranteed consistent.
+        by_year_sorted = {y: sum(by_year_dataset[y].values())
+                          for y in sorted(by_year_dataset)}
+        by_year_dataset_sorted = {y: dict(sorted(by_year_dataset[y].items()))
+                                  for y in sorted(by_year_dataset)}
+        n_dated = sum(by_year_sorted.values())
         n_undated = len(slot['matches']) - n_dated
         truncated = slot['true_total'] > len(slot['matches'])
         out_topics.append({
@@ -236,6 +244,7 @@ def main():
             'n_docs': len(slot['docs']),
             'datasets': dict(slot['datasets']),
             'by_year': by_year_sorted,
+            'by_year_dataset': by_year_dataset_sorted,
             'n_dated': n_dated,
             'n_undated': n_undated,
             'matches': slot['matches'],
