@@ -206,6 +206,7 @@ def main():
     ap.add_argument('--quotes-dir')
     ap.add_argument('--threads-dir')
     ap.add_argument('--imessages-dir')
+    ap.add_argument('--ds10-dir')
     ap.add_argument('--per-page', type=int, default=20)
     args = ap.parse_args()
 
@@ -218,6 +219,7 @@ def main():
     quotes= safe_load(Path(args.quotes_dir)  / 'quotes.json')   if args.quotes_dir  else None
     threads = safe_load(Path(args.threads_dir) / 'threads.json') if args.threads_dir else None
     imsgs = safe_load(Path(args.imessages_dir) / 'imessages.json') if args.imessages_dir else None
+    ds10 = safe_load(Path(args.ds10_dir) / 'ds10_financial.json') if args.ds10_dir else None
 
     pages = []
 
@@ -297,6 +299,41 @@ def main():
             p = page_cooccur(coo, args.per_page, i)
             if p: pages.append(p)
             else: break
+    # DS10 financial pages (one per category)
+    if ds10:
+        CAT_LABELS = {
+            'banker': 'JPMorgan banker names',
+            'entity': 'Counterparty entities (LLC / Inc / Corp / Trust)',
+            'bank': 'External bank mentions',
+            'beneficiary': 'Wire-transfer beneficiaries',
+            'account_holder': 'Account holder mentions',
+            'poa_grantee': 'Power-of-attorney grantees',
+            'money': 'Dollar amounts',
+            'acct_type': 'Account type tokens',
+        }
+        cat_order = ['poa_grantee','beneficiary','account_holder','entity','banker','bank','money','acct_type']
+        for cat in cat_order:
+            info = ds10.get('categories', {}).get(cat)
+            if not info or not info.get('top'): continue
+            top = info['top']
+            for i in range(0, min(len(top), args.per_page * 3), args.per_page):
+                rows = top[i:i+args.per_page]
+                pages.append({
+                    'kind': 'ds10_financial',
+                    'category': cat,
+                    'page': i // args.per_page + 1,
+                    'title': f'DS10 financial — {CAT_LABELS.get(cat, cat)}' + (
+                        f' (page {i//args.per_page + 1})' if i > 0 else ''),
+                    'subtitle': f'{ds10.get("n_documents_scanned",0)} DS10 docs scanned · {info["unique_values"]} unique values',
+                    'rows': [{
+                        'rank': i + j + 1,
+                        'text': r['text'],
+                        'count': r['count'],
+                        'docs': r['docs'],
+                        'sample_doc_ids': r['sample_doc_ids'],
+                    } for j, r in enumerate(rows)],
+                })
+
     if threads:
         top = threads.get('top_threads', [])
         if top:
