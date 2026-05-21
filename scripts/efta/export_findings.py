@@ -289,6 +289,7 @@ def main():
                 'subtitle': f"{t['total_matches']} matches in {t['n_docs']} docs · {t.get('n_dated',0)} dated, {t.get('n_undated',0)} undated · patterns: {', '.join(t['patterns'][:3])}…",
                 'explainer': f"Per-match records (not aggregate) for '{t['topic']}'. {t['note']}. Year histogram at top shows when these messages were written (pre-2020 vs post). Each row is one hit: message date, dataset, doc-id, verbatim matched phrase, 300-char context.",
                 'by_year': t.get('by_year', {}),
+                'by_year_dataset': t.get('by_year_dataset', {}),
                 'rows': [{
                     'rank': i+1,
                     'date': m['date'],
