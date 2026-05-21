@@ -14,6 +14,8 @@ from collections import Counter, defaultdict
 import Levenshtein
 import jellyfish
 
+# (re-imported above is fine — keep import re at module top for the regex use below)
+
 # Common OCR character confusions, asymmetric: key is what OCR produced,
 # value is the likely intended character. Apply both directions during clustering.
 OCR_SUBS = [
@@ -92,11 +94,18 @@ def cluster_persons(items: dict) -> dict:
     Clusters within the same soundex code by Levenshtein ≤1 (very tight to avoid
     false merges of unrelated short names).
     """
+    # Hard filter: drop single-token noise and obvious non-names.
+    NAME_NOISE = {
+        'Ep','Mr','Ms','Mrs','Dr','Sir','Re','Fwd','Fw','Cc','Bcc',
+        'And','The','For','But','Not','Yes','No','Of','To','From','By','In','On','At',
+        'Pm','Am','Re:','Inc','Llc','Corp','Llp','Lp','Co','Na',
+        'Ai','Ar','Sk','Nm','Lg','Gm','Je','Jlb','Lw','Di','Rk',
+    }
     by_sx = defaultdict(list)
     for name in items:
-        # Skip single-token garbage and very short fragments
-        if len(name) < 3:
-            continue
+        if len(name) < 4: continue          # bump from 3 to 4
+        if name in NAME_NOISE: continue
+        if not re.search(r'[A-Za-z]', name): continue  # no letters → garbage
         sx = jellyfish.soundex(name)
         by_sx[sx].append(name)
     # Items unchanged for short names → emit as-is later
@@ -126,12 +135,19 @@ def cluster_persons(items: dict) -> dict:
                 seen.add(m)
             merged['ocr_variants'] = sorted(variants)[:10]
             out[canon] = merged
-    # Add short-name items unchanged
+    # Add unclustered names — but apply the same noise filter
+    NAME_NOISE = {
+        'Ep','Mr','Ms','Mrs','Dr','Sir','Re','Fwd','Fw','Cc','Bcc',
+        'And','The','For','But','Not','Yes','No','Of','To','From','By','In','On','At',
+        'Pm','Am','Re:','Inc','Llc','Corp','Llp','Lp','Co','Na',
+        'Ai','Ar','Sk','Nm','Lg','Gm','Je','Jlb','Lw','Di','Rk',
+    }
     for name, stats in items.items():
-        if name in seen:
-            continue
-        if name in out:
-            continue
+        if name in seen: continue
+        if name in out: continue
+        if len(name) < 4: continue
+        if name in NAME_NOISE: continue
+        if not re.search(r'[A-Za-z]', name): continue
         merged = dict(stats)
         merged.setdefault('ocr_variants', [])
         out[name] = merged
