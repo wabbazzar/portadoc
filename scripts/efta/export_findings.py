@@ -319,6 +319,12 @@ def main():
                 'rows': [{
                     'rank': i+1, 'text': p['phrase'], 'count': p['n_total_hits'],
                     'docs': p['n_docs'], 'note': p['source'], 'samples': p['samples'],
+                    # Aggregate sample datasets so the filter can drop this row when
+                    # all of its source-samples are in a hidden bucket.
+                    'datasets': {
+                        ds: sum(1 for s in (p.get('samples') or []) if s.get('dataset') == ds)
+                        for ds in {s.get('dataset') for s in (p.get('samples') or []) if s.get('dataset')}
+                    },
                 } for i, p in enumerate(hit)],
             })
         if miss:
@@ -369,7 +375,8 @@ def main():
             p = page_cooccur(coo, args.per_page, i)
             if p: pages.append(p)
             else: break
-    # DS10 financial pages (one per category)
+    # DS10 financial pages (one per category) — every row tagged dataset_10
+    # so the global filter (when "DS10 financial" is off) hides them.
     if ds10:
         CAT_LABELS = {
             'banker': 'JPMorgan banker names',
@@ -401,6 +408,9 @@ def main():
                         'count': r['count'],
                         'docs': r['docs'],
                         'sample_doc_ids': r['sample_doc_ids'],
+                        # Every DS10 financial row is by definition dataset_10 only —
+                        # tagging here so the global filter handles them.
+                        'datasets': {'dataset_10': r['count']},
                     } for j, r in enumerate(rows)],
                 })
 
