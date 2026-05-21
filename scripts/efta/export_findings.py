@@ -248,7 +248,8 @@ def main():
                 } for j, r in enumerate(chunk)],
             })
 
-    # Topic-search pages (WW3 / simulation / pandemic — clickable per-match)
+    # Topic-search pages (WW3 / simulation / pandemic / antarctica / reptilian /
+    # sacrifice / ritual / pedophilia — clickable per-match with year histogram)
     if topics:
         for t in topics.get('topics', []):
             if t['total_matches'] == 0: continue
@@ -256,8 +257,9 @@ def main():
                 'kind': 'topic_search',
                 'topic': t['topic'],
                 'title': f"Topic search: {t['topic']}",
-                'subtitle': f"{t['total_matches']} matches in {t['n_docs']} docs · patterns: {', '.join(t['patterns'][:3])}…",
-                'explainer': f"Per-match records (not aggregate) for the topic '{t['topic']}'. {t['note']}. Each row: date, dataset, doc-id (click to open source PDF later — for now a path you can grep), the verbatim matched phrase, and 300-char context.",
+                'subtitle': f"{t['total_matches']} matches in {t['n_docs']} docs · {t.get('n_dated',0)} dated, {t.get('n_undated',0)} undated · patterns: {', '.join(t['patterns'][:3])}…",
+                'explainer': f"Per-match records (not aggregate) for '{t['topic']}'. {t['note']}. Year histogram at top shows when these messages were written (pre-2020 vs post). Each row is one hit: message date, dataset, doc-id, verbatim matched phrase, 300-char context.",
+                'by_year': t.get('by_year', {}),
                 'rows': [{
                     'rank': i+1,
                     'date': m['date'],

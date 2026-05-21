@@ -60,6 +60,63 @@ TOPICS = [
         r'\bvirus\s+leak\b',
         r'\blab\s+leak\b',
     ], 'Pandemic / bio-threat phrasing'),
+    ('Antarctica', [
+        r'\bantarctic(?:a|an)?\b',
+        r'\bantartica\b',                # common OCR misspelling
+        r'\bsouth\s+pole\b',
+        r'\boperation\s+high\s*jump\b',
+        r'\badmiral\s+byrd\b',
+        r'\bross\s+ice\s+shelf\b',
+        r'\bmcmurdo\b',
+        r'\bbase\s+ice\b',
+    ], 'Antarctica / south-polar references'),
+    ('Reptilian', [
+        r'\breptilian(?:s)?\b',
+        r'\blizard\s+(?:people|person|men|man|king|elite)\b',
+        r'\bshape[\s\-]?shifter(?:s)?\b',
+        r'\bshape[\s\-]?shift(?:ing)?\b',
+        r'\banun?n?aki\b',
+        # "draco/draconian" deliberately excluded — too many false positives
+        # ("draconian measures" / "draconian laws") in unrelated political docs.
+        r'\binner\s+earth\b',
+        r'\bhollow\s+earth\b',
+        r'\bdavid\s+icke\b',
+    ], 'Reptilian / shape-shifter mythos (draconian excluded — too noisy)'),
+    ('Sacrifice', [
+        r'\bsacrific(?:e|es|ed|ing|ial)\b',
+        r'\bblood\s+sacrifice\b',
+        r'\bblood\s+ritual\b',
+        r'\bblood\s+letting\b',
+        r'\bimmolat(?:e|ed|ion)\b',
+        r'\bofferings?\s+to\b',
+        r'\bhuman\s+sacrifice\b',
+        r'\bchild\s+sacrifice\b',
+    ], 'Sacrifice / immolation language'),
+    ('Ritual', [
+        r'\britual(?:s|ist|istic|ized|izing)?\b',
+        r'\bceremon(?:y|ies|ial|ially)\b',
+        r'\brite(?:s)?\b',
+        r'\bcult(?:ic|ist|ish|ists?)?\b',
+        r'\boccult(?:ic|ism|ist)?\b',
+        r'\bsatanic\b',
+        r'\bsatanism\b',
+    ], 'Ritual / ceremonial / occult phrasing'),
+    ('Pedophilia (explicit terms)', [
+        # Strict — only words that EXPLICITLY mean child sexual abuse.
+        # The operational Epstein-network euphemisms (massage / girls / underage)
+        # are already counted under codeword_top — not re-listed here to avoid
+        # double-counting and to keep this topic's matches journalistically clean.
+        r'\bp(?:ae)?dophil(?:e|es|ia|ic)\b',
+        r'\bpedo(?:s|philes?)?\b',
+        r'\bephebophil(?:e|es|ia)\b',
+        r'\bchild\s+(?:porn|pornography)\b',
+        r'\bcsam\b',                     # NCMEC term: child-sexual-abuse-material
+        r'\bchild\s+(?:sex|sexual)\s+(?:abuse|trafficking|exploitation)\b',
+        r'\bsexual\s+abuse\s+of\s+(?:a\s+)?minor\b',
+        r'\bstatutory\s+rape\b',
+        r'\bage\s+of\s+consent\b',
+        r'\bunderage\s+(?:sex|girls?|boys?)\b',
+    ], 'Explicit child-sexual-abuse terminology (operational euphemisms tracked separately under code_terms)'),
 ]
 
 
@@ -74,18 +131,21 @@ def find_doc_date(text: str) -> str | None:
     m = re.search(r'(?i)Sent[:\s]+(?:[A-Za-z]+,?\s+)?(\d{1,2}/\d{1,2}/\d{2,4}(?:\s+\d{1,2}:\d{2})?)', head)
     if m:
         return _parse_ts(m.group(1))
-    # First yyyy-mm-dd
-    m = re.search(r'\b(\d{4})-(\d{2})-(\d{2})\b', head)
-    if m:
-        return f'{m.group(1)}-{m.group(2)}-{m.group(3)}'
-    # First Month-DD-YYYY
-    m = re.search(r'\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\w*\s+(\d{1,2}),?\s+(\d{4})\b', head, re.IGNORECASE)
-    if m:
+    # First yyyy-mm-dd (restrict to plausible doc-date range to suppress
+    # false positives from page numbers, ID codes, etc.)
+    for m in re.finditer(r'\b(\d{4})-(\d{2})-(\d{2})\b', head):
+        y = int(m.group(1))
+        if 1990 <= y <= 2030:
+            return f'{m.group(1)}-{m.group(2)}-{m.group(3)}'
+    # First Month-DD-YYYY (also year-bounded)
+    for m in re.finditer(r'\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\w*\s+(\d{1,2}),?\s+(\d{4})\b', head, re.IGNORECASE):
+        y = int(m.group(3))
+        if not (1990 <= y <= 2030): continue
         mo_name = m.group(1).lower()[:3]
         mo = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,'jul':7,
               'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}.get(mo_name)
         if mo:
-            return f"{m.group(3)}-{mo:02d}-{int(m.group(2)):02d}"
+            return f"{y}-{mo:02d}-{int(m.group(2)):02d}"
     return None
 
 
@@ -107,7 +167,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('corpus_jsonl')
     ap.add_argument('out_dir')
-    ap.add_argument('--max-matches-per-topic', type=int, default=500)
+    ap.add_argument('--max-matches-per-topic', type=int, default=5000)
     args = ap.parse_args()
     out = Path(args.out_dir); out.mkdir(parents=True, exist_ok=True)
 
@@ -117,6 +177,7 @@ def main():
     per_topic = {label: {
         'topic': label, 'note': note, 'patterns': [p.pattern for p in pats],
         'matches': [], 'docs': set(), 'datasets': Counter(),
+        'true_total': 0,   # all matches counted (independent of stored-cap)
     } for label, pats, note in compiled}
 
     n_docs = 0
@@ -134,33 +195,49 @@ def main():
                 slot = per_topic[label]
                 for rx in pats:
                     for m in rx.finditer(text):
-                        if len(slot['matches']) >= args.max_matches_per_topic:
-                            break
-                        start = max(0, m.start() - 120)
-                        end   = min(len(text), m.end() + 220)
-                        ctx = re.sub(r'\s+', ' ', text[start:end]).strip()
-                        slot['matches'].append({
-                            'doc_id': doc_id,
-                            'dataset': ds,
-                            'date': doc_date,
-                            'matched': m.group(0),
-                            'context': ctx,
-                            'source': rec.get('source',''),
-                        })
+                        # Always count, even after the display cap is hit
+                        slot['true_total'] += 1
                         slot['docs'].add(doc_id)
                         slot['datasets'][ds] += 1
+                        if len(slot['matches']) < args.max_matches_per_topic:
+                            start = max(0, m.start() - 120)
+                            end   = min(len(text), m.end() + 220)
+                            ctx = re.sub(r'\s+', ' ', text[start:end]).strip()
+                            slot['matches'].append({
+                                'doc_id': doc_id,
+                                'dataset': ds,
+                                'date': doc_date,
+                                'matched': m.group(0),
+                                'context': ctx,
+                                'source': rec.get('source',''),
+                            })
 
-    # Serialize — sort matches by date (None at end)
+    # Serialize — sort matches by date (None at end), aggregate by year
     out_topics = []
     for label, slot in per_topic.items():
         slot['matches'].sort(key=lambda r: (r['date'] is None, r['date'] or ''))
+        by_year = Counter()
+        for m in slot['matches']:
+            if m['date']:
+                yr = m['date'][:4]
+                if yr.isdigit() and 1990 <= int(yr) <= 2030:
+                    by_year[int(yr)] += 1
+        by_year_sorted = dict(sorted(by_year.items()))
+        n_dated = sum(by_year.values())
+        n_undated = len(slot['matches']) - n_dated
+        truncated = slot['true_total'] > len(slot['matches'])
         out_topics.append({
             'topic': slot['topic'],
             'note': slot['note'],
             'patterns': slot['patterns'],
-            'total_matches': len(slot['matches']),
+            'total_matches': slot['true_total'],          # TRUE count, all hits
+            'shown_matches': len(slot['matches']),         # stored / displayed count
+            'truncated': truncated,
             'n_docs': len(slot['docs']),
             'datasets': dict(slot['datasets']),
+            'by_year': by_year_sorted,
+            'n_dated': n_dated,
+            'n_undated': n_undated,
             'matches': slot['matches'],
         })
 
@@ -180,7 +257,8 @@ def main():
 
     print(f'docs scanned: {n_docs}')
     for t in out_topics:
-        print(f"  {t['topic']:>16}: {t['total_matches']:>4} matches in {t['n_docs']:>4} docs")
+        trunc = f"  (truncated, showing {t['shown_matches']})" if t['truncated'] else ''
+        print(f"  {t['topic']:>16}: {t['total_matches']:>5} TRUE matches in {t['n_docs']:>4} docs{trunc}")
         # Show first 5 dated matches
         for m in [x for x in t['matches'] if x['date']][:3]:
             print(f"      [{m['date'][:10]}] {m['doc_id']}: …{m['matched']}…")
