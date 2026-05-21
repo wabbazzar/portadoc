@@ -207,6 +207,8 @@ def main():
     ap.add_argument('--threads-dir')
     ap.add_argument('--imessages-dir')
     ap.add_argument('--ds10-dir')
+    ap.add_argument('--names-dir')
+    ap.add_argument('--topics-dir')
     ap.add_argument('--per-page', type=int, default=20)
     args = ap.parse_args()
 
@@ -220,22 +222,61 @@ def main():
     threads = safe_load(Path(args.threads_dir) / 'threads.json') if args.threads_dir else None
     imsgs = safe_load(Path(args.imessages_dir) / 'imessages.json') if args.imessages_dir else None
     ds10 = safe_load(Path(args.ds10_dir) / 'ds10_financial.json') if args.ds10_dir else None
+    names_full = safe_load(Path(args.names_dir) / 'names_full.json') if args.names_dir else None
+    topics = safe_load(Path(args.topics_dir) / 'topic_search.json') if args.topics_dir else None
 
     pages = []
 
-    # PAGE 1: top 20 names
-    p = page_names_top20(rank, args.per_page)
-    if p: pages.append(p)
+    # PAGE 1: top names by full-corpus grep (preferred over NER which is partial)
+    if names_full and names_full.get('rows'):
+        top = names_full['rows']
+        per_page = max(args.per_page, 50)  # show more — user wanted full ranking
+        for i in range(0, min(len(top), per_page * 3), per_page):
+            chunk = top[i:i+per_page]
+            pages.append({
+                'kind': 'names_grep',
+                'page': i // per_page + 1,
+                'title': 'Top names by mention count (full-corpus grep)' + (
+                    f' — page {i//per_page+1}' if i > 0 else ''),
+                'subtitle': f'{names_full.get("n_documents_scanned",0)} docs scanned. Curated alias list; case-insensitive word-boundary regex.',
+                'explainer': 'Counts mentions of each named entity across the FULL corpus (~173K docs). Uses a curated alias list (e.g. "Maxwell" matches "Ghislaine Maxwell", "G. Maxwell", "GM"). Sorted by number of distinct documents containing a mention.',
+                'rows': [{
+                    'rank': i+j+1, 'text': r['name'], 'count': r['mentions'],
+                    'docs': r['docs'], 'datasets': r['datasets'],
+                    'sample_doc_ids': r['sample_doc_ids'],
+                    'note': r['note'],
+                } for j, r in enumerate(chunk)],
+            })
 
-    # PAGE 2: emails (promoted)
+    # Topic-search pages (WW3 / simulation / pandemic — clickable per-match)
+    if topics:
+        for t in topics.get('topics', []):
+            if t['total_matches'] == 0: continue
+            pages.append({
+                'kind': 'topic_search',
+                'topic': t['topic'],
+                'title': f"Topic search: {t['topic']}",
+                'subtitle': f"{t['total_matches']} matches in {t['n_docs']} docs · patterns: {', '.join(t['patterns'][:3])}…",
+                'explainer': f"Per-match records (not aggregate) for the topic '{t['topic']}'. {t['note']}. Each row: date, dataset, doc-id (click to open source PDF later — for now a path you can grep), the verbatim matched phrase, and 300-char context.",
+                'rows': [{
+                    'rank': i+1,
+                    'date': m['date'],
+                    'doc_id': m['doc_id'],
+                    'dataset': m['dataset'],
+                    'matched': m['matched'],
+                    'context': m['context'],
+                } for i, m in enumerate(t['matches'])],
+            })
+
+    # Emails page (from NER EMAIL label — may be partial but still useful)
     p = page_label(rank, 'EMAIL', args.per_page)
     if p:
         p['title'] = 'Top email addresses observed in document bodies'
+        p['explainer'] = 'Email addresses tagged by the PII model (Piiranha-v1), after OCR-aware fuzzy-merge that collapses near-duplicates of the same address (Levenshtein ≤2 on local part). Note: NER is partial — only ~7% of the corpus has been tagged so far.'
         pages.append(p)
 
     # Verbatim quote pages (most journalist-useful — show the actual quote)
     if quotes:
-        # Split into hit/miss for cleaner reader experience
         hit = [p for p in quotes.get('phrases', []) if p['n_total_hits'] > 0]
         miss = [p for p in quotes.get('phrases', []) if p['n_total_hits'] == 0]
         if hit:
@@ -243,13 +284,10 @@ def main():
                 'kind': 'verbatim_quote',
                 'title': 'Verbatim press-finding recreations',
                 'subtitle': f'{len(hit)} of {len(hit)+len(miss)} journalist-cited phrases located in our corpus',
+                'explainer': 'Phrases that named journalists / press releases have publicly quoted from these EFTA documents. Each entry shows where we found that exact phrase in our locally-mirrored copy. The blockquote is verbatim — same text reporters were quoting.',
                 'rows': [{
-                    'rank': i+1,
-                    'text': p['phrase'],
-                    'count': p['n_total_hits'],
-                    'docs': p['n_docs'],
-                    'note': p['source'],
-                    'samples': p['samples'],
+                    'rank': i+1, 'text': p['phrase'], 'count': p['n_total_hits'],
+                    'docs': p['n_docs'], 'note': p['source'], 'samples': p['samples'],
                 } for i, p in enumerate(hit)],
             })
         if miss:
@@ -257,6 +295,7 @@ def main():
                 'kind': 'verbatim_quote',
                 'title': 'Press-finding phrases NOT (yet) in our corpus',
                 'subtitle': 'likely live in House-Oversight-Dems-specific releases we have not pulled',
+                'explainer': 'Press-cited phrases the pipeline could NOT locate in our local corpus. These almost certainly live in House Oversight Democrats releases distributed as individual Google Drive previews rather than bulk downloads. Pull plan documented in WORK_LOG.',
                 'rows': [{
                     'rank': i+1, 'text': p['phrase'], 'count': 0, 'docs': 0,
                     'note': p['source'], 'samples': [],
@@ -375,6 +414,27 @@ def main():
                 p = page_ngram(ng, n, args.per_page, i)
                 if p: pages.append(p)
                 else: break
+
+    # Inject per-kind explainer text for any page missing it
+    EXPLAINERS = {
+        'names_grep': 'Counts mentions of each named entity across the FULL corpus (~173K docs). Uses a curated alias list (e.g. "Maxwell" matches "Ghislaine Maxwell", "G. Maxwell", "GM"). Sorted by distinct documents containing a mention.',
+        'topic_search': 'Per-match topic search across the full corpus. Each row is ONE hit (not aggregate) with the message date, source doc id, the matched phrase, and surrounding context.',
+        'verbatim_quote': 'Phrases reporters have publicly quoted from the EFTA release. Blockquotes are verbatim from our local copy.',
+        'press_recreate': 'Counts of journalist-cited names and phrases across the full corpus. Each row links to its source (which article first surfaced the quote/name).',
+        'codeword_top': 'Documented Epstein-network code language from court filings + journalist reporting. Counts the literal terms across the corpus.',
+        'doc_dates_year': 'Each document gets ONE canonical date via a priority chain: email Sent header > police report date > grand-jury heading > first body date > bare-year fallback. Bar shows how many documents are from each year.',
+        'mention_dates_year': 'Every date-shaped string in document bodies. Per-doc deduplicated, then bucketed by year. Shows what years the corpus REFERS TO (vs. what years it was WRITTEN IN, see "Doc dates" page).',
+        'cooccur_pairs': 'Pairs of named entities (SURNAME/GIVENNAME tagged by the PII model) that appear in the same document. High co-occurrence implies real connection.',
+        'email_threads': 'Emails grouped by normalized Subject: line (Re:/Fwd: stripped). Each row is a distinct conversation thread, sorted by message count.',
+        'imessages': 'Forensic iMessage exports from Epstein\'s Mac (captured day-of-arrest July 6 2019). JE = sender Jeffrey Epstein. ◼ = REDACTED counterpart. Yellow row = JE sent; red = counterpart sent. Chronological.',
+        'tfidf': 'TF-IDF ranks phrases that are RARE globally but CONCENTRATED in a few documents — the opposite of doc-spread n-grams. Surfaces what specific docs are uniquely about.',
+        'ngram': 'Most repeated word sequences across the corpus, sorted by how many documents contain the phrase (not raw count). Boilerplate phrases are filtered.',
+        'label_top': 'Per-label PII rankings from the PII model (Piiranha-v1). NOTE: NER is currently partial (~7% of corpus tagged) — counts will grow as it completes.',
+        'ds10_financial': 'Regex-based extractors run on DS10 (the JPM Private Bank + Deutsche Bank correspondence dossier, 158K docs). Captures counterparty entities, JPM banker names, money amounts, beneficiaries, and account holders.',
+    }
+    for p in pages:
+        if 'explainer' not in p:
+            p['explainer'] = EXPLAINERS.get(p['kind'], '')
 
     # Datasets seen across all PII labels
     datasets_seen = set()

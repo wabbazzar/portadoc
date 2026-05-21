@@ -34,6 +34,7 @@ should might may must shall will i'm i've you're you've we're we've they're they
 
 # Email boilerplate words that show up in 80% of DS11 emails (centurion concierge footer)
 # + legal disclaimer footer + OCR address-stamp artifacts seen in DS4 police reports
+# + JEE legal-footer terms specific to Epstein outgoing mail
 BOILERPLATE = set('''
 centurion relationship manager regards hours mon tue wed thu fri thursday friday
 saturday sunday monday tuesday wednesday est please thanks thank visit privacy
@@ -46,13 +47,54 @@ contained part thereof strictly prohibited unauthorized review use disclosure
 distribution reproduction reading dissemination forwarding action reliance
 herein replying telephone deleting computer system network advised
 white plains pis pls ny york legal disclaimer notice information
+jee jeevacation gmail com copying addressee property constitute inside
+copyright house oversight note communications belongs vacation
+jeeyacation jeeitunes
+sender guid flags invitation presentity participants chat room messages
+read yes no false true 1085445 1060865 1150981 1126401 1779774
+flipboard utm campaign styling flab cell redirect lang en today
 '''.split())
 
 DROP = STOPWORDS | BOILERPLATE
 
 
+FOOTER_MARKERS = [
+    'the information contained in this',
+    'this e-mail is confidential',
+    'this email is confidential',
+    'this communication is intended',
+    'this message is intended only',
+    'please note this email',
+    'this electronic transmission',
+    'confidentiality notice',
+    'unauthorized use disclosure',
+    'if you have received this',
+    'if you are not the intended',
+    'note constitute inside addressee',
+    'work product indicated',
+    'responsible delivery message',
+    'attorney work product',
+    'contain work product',     # plaintiffs-atty footer variant
+    'this transmission contains',
+    'pursuant to circular 230',
+    'irs circular 230',
+    'last message id',          # iMessage forensic export
+    'presentity ids',
+    'chat room participants',
+]
+_FOOTER_RE = re.compile('|'.join(re.escape(m) for m in FOOTER_MARKERS), re.IGNORECASE)
+
+
+def strip_footer(text: str) -> str:
+    """Truncate text at the first occurrence of any email/legal-disclaimer footer marker."""
+    if not text: return text
+    m = _FOOTER_RE.search(text)
+    if m: return text[:m.start()]
+    return text
+
+
 def tokens(text: str):
-    t = text.lower()
+    t = strip_footer(text).lower()
     t = re.sub(r'[^a-z0-9 ]+', ' ', t)
     for w in t.split():
         if len(w) >= 2 and w not in DROP:
