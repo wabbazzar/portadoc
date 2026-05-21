@@ -161,6 +161,36 @@ Parsed 1,575 distinct messages from 25 forensic-export docs, spanning 2017-01-27
 - 2019-06-05 EPSTEIN shared a RawStory link about Michael Wolff saying Bannon "has knowledge of Trump's crimes"
 - 2019-06-17 EPSTEIN shared an AOL link about "Israel announces Golan Heights settlement to be named after Trump"
 
+### iMessage timing + busiest-day reveal (`imessages.py` + ad-hoc analysis)
+- **Peak hours 3 AM – 9 AM** (4 AM = 168 msgs, highest hour). Confirms Epstein's
+  notorious early-bird schedule. Counterpart matches this rhythm — meaning the
+  counterpart either operates on global hours, finance/news hours, or matches Epstein deliberately.
+- Almost no messages 8 PM – 2 AM (quiet evenings).
+- Median message length: 30 chars. These are short operational/social texts, not compositions.
+
+**Busiest day: 2019-04-30 (68 messages, ~2 months pre-arrest)** — content reveals:
+1. **Trump/Deutsche Bank disclosure discussion**:
+   - JE 03:40 "trump trying to stop deutsch bank only a matter of time."
+   - counterpart 03:45 "His strategy is drag this out for 15 months then it won't matter"
+   - JE 03:48 mentions "weissleburg" (Allen Weisselberg, Trump Org CFO indicted 2021)
+2. **They are PRODUCING A DOCUMENTARY FILM defending Epstein**:
+   - counterpart 03:46 "I'm watching our second hour now"
+   - counterpart 05:06 "we must counter 'rapist who traffics in female children to be raped by worlds most powerful, richest'"
+   - counterpart 05:07 "Can't redeem unredeemable -- you are a lot of things-which we will show-- but you are NOT that"
+   - JE 05:03 "the christians i met with feel, the media portraying me as beyond redemption is deeply troubling and offensive"
+   - JE 14:07 "I watched the interview. Well done again , thx. here is what I think will work legally, I pay direct costs of filming. As Darren is the contractor for legal service prep . It gets paid by Darren."
+   - counterpart 12:42 "Did u get the film we shot ??"
+3. **MBS / KSA / Yemen / Pompeo**:
+   - JE 04:37 "if you like you can go to yemen and meet with heads. you have an invitation."
+   - JE 04:38 "you should if you decide of course coordinate with pompeo"
+   - counterpart 04:39 "KSA wants everybody to stay away-- closer inspection only leads to more doubts"
+4. **Nick Bostrom / AI**:
+   - counterpart 04:59 "Have you followed nick bostrom? Oxford prof-- bill gates guy"
+   - JE 05:00 "chicken little"
+
+The counterpart is operating as Epstein's media-defense producer (film team) and intermediary
+to world leaders (Yemen access "unlike others"), with both of them up at 3-5 AM.
+
 URLs Epstein shared (66 total):
 - WSJ, NYT, Bloomberg, NYT, Commentary, Marketwatch, Business Insider, USA Today
 - One Kaiser Permanente bio (Bernard J. Tyson, KP CEO — died Nov 2019)
