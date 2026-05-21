@@ -209,6 +209,7 @@ def main():
     ap.add_argument('--ds10-dir')
     ap.add_argument('--names-dir')
     ap.add_argument('--topics-dir')
+    ap.add_argument('--persons-json')
     ap.add_argument('--per-page', type=int, default=20)
     args = ap.parse_args()
 
@@ -224,10 +225,26 @@ def main():
     ds10 = safe_load(Path(args.ds10_dir) / 'ds10_financial.json') if args.ds10_dir else None
     names_full = safe_load(Path(args.names_dir) / 'names_full.json') if args.names_dir else None
     topics = safe_load(Path(args.topics_dir) / 'topic_search.json') if args.topics_dir else None
+    persons = safe_load(Path(args.persons_json)) if args.persons_json else None
 
     pages = []
 
-    # PAGE 1: NER-discovered top names — Piiranha tags GIVENNAME + SURNAME
+    # PAGE 1: Person dossiers — one card per known person with cross-corpus stats
+    if persons and persons.get('persons'):
+        plist = persons['persons']
+        per_page = 10  # 10 dossier cards per page
+        for i in range(0, len(plist), per_page):
+            chunk = plist[i:i+per_page]
+            pages.append({
+                'kind': 'person_dossier',
+                'page': i // per_page + 1,
+                'title': 'Person dossiers' + (f' — page {i//per_page+1}' if i > 0 else ''),
+                'subtitle': f'{len(plist)} curated persons · {persons.get("n_documents_scanned",0)} docs scanned full corpus',
+                'explainer': 'One dossier card per known Epstein-network figure. Each card shows: total mentions across the full ~173K-doc corpus, per-dataset breakdown, per-year mention timeline, 5 sample contexts with clickable doc-IDs, and a link to Wikipedia (thumbnail loaded lazily on click).',
+                'rows': chunk,  # raw person records — render with custom code
+            })
+
+    # PAGE 2: NER-discovered top names — Piiranha tags GIVENNAME + SURNAME
     # across the text-rich subset (tagworthy: court docs + emails + estate, no DS10).
     # This is the proper NER output, not the curated alias list.
     p = page_names_top20(rank, max(args.per_page, 50))
@@ -396,10 +413,15 @@ def main():
                 'subtitle': f'{threads.get("n_emails_scanned",0)} emails grouped by normalized subject ({threads.get("n_threads",0)} distinct threads)',
                 'rows': [{
                     'rank': i+1,
-                    'text': r['subject_sample'][:80],
-                    'count': r['n_messages'],
-                    'docs': r['n_messages'],
-                    'note': f"{r.get('first_sent','?')[:10] if r.get('first_sent') else '?'} → {r.get('last_sent','?')[:10] if r.get('last_sent') else '?'}  ·  from: {(r['participants_from'][0] if r['participants_from'] else '?')[:40]}",
+                    'subject': r['subject_sample'],
+                    'n_messages': r['n_messages'],
+                    'first_sent': r.get('first_sent'),
+                    'last_sent': r.get('last_sent'),
+                    'participants_from': r.get('participants_from', []),
+                    'datasets_list': r.get('datasets', []),
+                    'messages': r.get('messages', []),
+                    # Synthesize a per-row datasets dict so the filter bar still works
+                    'datasets': {ds: 1 for ds in r.get('datasets', [])},
                 } for i, r in enumerate(top[:args.per_page])],
             })
 
@@ -431,6 +453,7 @@ def main():
 
     # Inject per-kind explainer text for any page missing it
     EXPLAINERS = {
+        'person_dossier': 'One dossier per known person. Each card shows aliases, total mentions across the full corpus, dataset breakdown, year timeline, sample doc contexts (clickable), and a Wikipedia link.',
         'names_grep': 'Counts mentions of each named entity across the FULL corpus (~173K docs). Uses a curated alias list (e.g. "Maxwell" matches "Ghislaine Maxwell", "G. Maxwell", "GM"). Sorted by distinct documents containing a mention.',
         'topic_search': 'Per-match topic search across the full corpus. Each row is ONE hit (not aggregate) with the message date, source doc id, the matched phrase, and surrounding context.',
         'verbatim_quote': 'Phrases reporters have publicly quoted from the EFTA release. Blockquotes are verbatim from our local copy.',
@@ -439,8 +462,8 @@ def main():
         'doc_dates_year': 'Each document gets ONE canonical date via a priority chain: email Sent header > police report date > grand-jury heading > first body date > bare-year fallback. Bar shows how many documents are from each year.',
         'mention_dates_year': 'Every date-shaped string in document bodies. Per-doc deduplicated, then bucketed by year. Shows what years the corpus REFERS TO (vs. what years it was WRITTEN IN, see "Doc dates" page).',
         'cooccur_pairs': 'Pairs of named entities (SURNAME/GIVENNAME tagged by the PII model) that appear in the same document. High co-occurrence implies real connection.',
-        'email_threads': 'Emails grouped by normalized Subject: line (Re:/Fwd: stripped). Each row is a distinct conversation thread, sorted by message count.',
-        'imessages': 'Forensic iMessage exports from Epstein\'s Mac (captured day-of-arrest July 6 2019). JE = sender Jeffrey Epstein. ◼ = REDACTED counterpart. Yellow row = JE sent; red = counterpart sent. Chronological.',
+        'email_threads': 'Emails grouped by normalized Subject: line (Re:/Fwd: stripped). Each row is a distinct conversation thread. Click ▸ to expand and see the per-message table (date · doc-id · from · to · subject).',
+        'imessages': 'Forensic iMessage exports from Epstein\'s Mac (captured day-of-arrest July 6 2019). The 20 paginated pages are NOT 20 separate chains — they are chronological chunks of one merged stream pulled from 25 source iMessage forensic-export documents. Each session break is marked "— session HOUSE_OVERSIGHT_NNNN —" (clickable). JE = Jeffrey Epstein (yellow). ◼ = REDACTED counterpart (red).',
         'tfidf': 'TF-IDF ranks phrases that are RARE globally but CONCENTRATED in a few documents — the opposite of doc-spread n-grams. Surfaces what specific docs are uniquely about.',
         'ngram': 'Most repeated word sequences across the corpus, sorted by how many documents contain the phrase (not raw count). Boilerplate phrases are filtered.',
         'label_top': 'Per-label PII rankings from the PII model (Piiranha-v1). NOTE: NER is currently partial (~7% of corpus tagged) — counts will grow as it completes.',

@@ -164,6 +164,19 @@ def main():
                 'participants_from': sorted({m['from'] for m in msgs if m['from']})[:5],
                 'sample_ids': [m['id'] for m in msgs[:5]],
                 'datasets': sorted({m['dataset'] for m in msgs}),
+                # Embed actual messages so the viewer can expand each thread.
+                # Cap at 30 messages/thread to keep findings.json reasonable.
+                'messages': [
+                    {
+                        'id': m['id'],
+                        'dataset': m['dataset'],
+                        'subject': m['subject'][:120],
+                        'from': (m['from'] or '')[:80],
+                        'to':   (m['to']   or '')[:80],
+                        'sent_iso': m.get('sent_iso'),
+                    }
+                    for m in msgs[:30]
+                ],
             }
             for subj, msgs in ranked[:args.top]
         ],
