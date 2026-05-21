@@ -70,7 +70,11 @@ def main():
     ap.add_argument('out_dir')
     ap.add_argument('--n', type=int, nargs='+', default=[4, 5, 6])
     ap.add_argument('--top', type=int, default=200)
+    ap.add_argument('--exclude-dataset', action='append', default=[],
+                    help='Skip docs whose dataset field matches (repeatable). Useful for '
+                         'memory-hungry corpora like DS10 financial bundles.')
     args = ap.parse_args()
+    EXCLUDE = set(args.exclude_dataset)
 
     out = Path(args.out_dir); out.mkdir(parents=True, exist_ok=True)
 
@@ -78,11 +82,15 @@ def main():
     doc_counters = {n: {} for n in args.n}  # ngram -> set(doc_id)
 
     n_docs = 0
+    n_skipped = 0
     with open(args.corpus_jsonl) as f:
         for line in f:
             try:
                 rec = json.loads(line)
             except Exception:
+                continue
+            if rec.get('dataset') in EXCLUDE:
+                n_skipped += 1
                 continue
             n_docs += 1
             toks = list(tokens(rec.get('text', '')))
@@ -123,9 +131,11 @@ def main():
             for i, (g, ct) in enumerate(items, 1):
                 w.writerow([i, g, ct, len(doc_counters[n][g])])
 
+    summary['n_skipped_excluded'] = n_skipped
+    summary['excluded_datasets'] = sorted(EXCLUDE)
     with open(out / 'ngrams.json', 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
-    print(f'documents: {n_docs}')
+    print(f'documents: {n_docs}  (skipped {n_skipped} excluded; datasets={sorted(EXCLUDE)})')
     for n in args.n:
         info = summary['sizes'][n]
         print(f'  n={n}: {info["total_distinct"]} distinct, top showing {len(info["top"])}')

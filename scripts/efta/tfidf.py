@@ -32,15 +32,23 @@ def main():
     ap.add_argument('--top', type=int, default=150)
     ap.add_argument('--min-doc-tf', type=int, default=3,
                     help='Minimum tf in a single doc for n-gram to count')
+    ap.add_argument('--exclude-dataset', action='append', default=[],
+                    help='Skip docs whose dataset field matches (repeatable). Match '
+                         'ngrams.py exclusion to keep TF-IDF subset consistent.')
     args = ap.parse_args()
+    EXCLUDE = set(args.exclude_dataset)
     out = Path(args.out_dir); out.mkdir(parents=True, exist_ok=True)
 
     # Per-doc tf counters + global df
     docs = []  # list of (id, dataset, {n: Counter})
+    n_skipped = 0
     with open(args.corpus_jsonl) as f:
         for line in f:
             try: rec = json.loads(line)
             except: continue
+            if rec.get('dataset') in EXCLUDE:
+                n_skipped += 1
+                continue
             toks = list(tokens(rec.get('text', '')))
             per_n = {}
             for n in args.n:
@@ -94,9 +102,11 @@ def main():
             for i, (g, sc) in enumerate(ranked, 1):
                 w.writerow([i, g, f'{sc:.2f}', peak_tf[g], peak_doc[g], peak_doc_count[g]])
 
+    summary['n_skipped_excluded'] = n_skipped
+    summary['excluded_datasets'] = sorted(EXCLUDE)
     with open(out / 'tfidf.json', 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
-    print(f'docs: {N}')
+    print(f'docs: {N}  (skipped {n_skipped} excluded; datasets={sorted(EXCLUDE)})')
     for n in args.n:
         print(f'  n={n}: {summary["sizes"][n]["total_distinct"]} scored, top shown {len(summary["sizes"][n]["top"])}')
 
