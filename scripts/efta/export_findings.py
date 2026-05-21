@@ -203,6 +203,8 @@ def main():
     ap.add_argument('--dates-dir')
     ap.add_argument('--tfidf-dir')
     ap.add_argument('--cooccur-dir')
+    ap.add_argument('--quotes-dir')
+    ap.add_argument('--threads-dir')
     ap.add_argument('--per-page', type=int, default=20)
     args = ap.parse_args()
 
@@ -212,6 +214,8 @@ def main():
     dates = safe_load(Path(args.dates_dir)   / 'dates.json')    if args.dates_dir   else None
     tfidf = safe_load(Path(args.tfidf_dir)   / 'tfidf.json')    if args.tfidf_dir   else None
     coo   = safe_load(Path(args.cooccur_dir) / 'cooccur.json')  if args.cooccur_dir else None
+    quotes= safe_load(Path(args.quotes_dir)  / 'quotes.json')   if args.quotes_dir  else None
+    threads = safe_load(Path(args.threads_dir) / 'threads.json') if args.threads_dir else None
 
     pages = []
 
@@ -224,6 +228,36 @@ def main():
     if p:
         p['title'] = 'Top email addresses observed in document bodies'
         pages.append(p)
+
+    # Verbatim quote pages (most journalist-useful — show the actual quote)
+    if quotes:
+        # Split into hit/miss for cleaner reader experience
+        hit = [p for p in quotes.get('phrases', []) if p['n_total_hits'] > 0]
+        miss = [p for p in quotes.get('phrases', []) if p['n_total_hits'] == 0]
+        if hit:
+            pages.append({
+                'kind': 'verbatim_quote',
+                'title': 'Verbatim press-finding recreations',
+                'subtitle': f'{len(hit)} of {len(hit)+len(miss)} journalist-cited phrases located in our corpus',
+                'rows': [{
+                    'rank': i+1,
+                    'text': p['phrase'],
+                    'count': p['n_total_hits'],
+                    'docs': p['n_docs'],
+                    'note': p['source'],
+                    'samples': p['samples'],
+                } for i, p in enumerate(hit)],
+            })
+        if miss:
+            pages.append({
+                'kind': 'verbatim_quote',
+                'title': 'Press-finding phrases NOT (yet) in our corpus',
+                'subtitle': 'likely live in House-Oversight-Dems-specific releases we have not pulled',
+                'rows': [{
+                    'rank': i+1, 'text': p['phrase'], 'count': 0, 'docs': 0,
+                    'note': p['source'], 'samples': [],
+                } for i, p in enumerate(miss)],
+            })
 
     # PAGE 3-5: press recreate / codeword / doc-dates / mention-dates
     if grep:
@@ -241,6 +275,21 @@ def main():
             p = page_cooccur(coo, args.per_page, i)
             if p: pages.append(p)
             else: break
+    if threads:
+        top = threads.get('top_threads', [])
+        if top:
+            pages.append({
+                'kind': 'email_threads',
+                'title': 'Longest reconstructed email threads',
+                'subtitle': f'{threads.get("n_emails_scanned",0)} emails grouped by normalized subject ({threads.get("n_threads",0)} distinct threads)',
+                'rows': [{
+                    'rank': i+1,
+                    'text': r['subject_sample'][:80],
+                    'count': r['n_messages'],
+                    'docs': r['n_messages'],
+                    'note': f"{r.get('first_sent','?')[:10] if r.get('first_sent') else '?'} → {r.get('last_sent','?')[:10] if r.get('last_sent') else '?'}  ·  from: {(r['participants_from'][0] if r['participants_from'] else '?')[:40]}",
+                } for i, r in enumerate(top[:args.per_page])],
+            })
 
     # PAGE 6+: other PII labels paginated
     name_labels = {'PERSON','NAME','GIVENNAME','SURNAME','EMAIL'}
