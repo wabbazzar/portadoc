@@ -118,7 +118,23 @@ BANKER_LASTNAME_DENYLIST = {
 BANKER_FIRSTNAME_DENYLIST_MONTHS = {
     'January','February','March','April','May','June','July',
     'August','September','October','November','December',
+    'Jan','Feb','Mar','Apr','Jun','Jul','Aug','Sep','Sept','Oct','Nov','Dec',
 }
+
+# Add abbreviated day names to the lastname denylist
+BANKER_LASTNAME_DENYLIST.update({
+    'Mon','Tue','Tues','Wed','Thu','Thur','Thurs','Fri','Sat','Sun',
+    # Financial-template bigram heads observed in DS10
+    'Estate','Fees','Sales','Park','Wells','Cash','Net','Gross','Total',
+    'YTD','Prior','Current','Available','Pending','Posted',
+    'Year','Month','Quarter','Period','Statement', 'Sales,','Earnings',
+})
+BANKER_FIRSTNAME_DENYLIST.update({
+    'Mineral','Charges','Maturities','Inside','Outside','Fargo','Equivalents',
+    'Income','Earnings','Loss','Profit', 'Treasury', 'Federal',
+    'Deposits','Withdrawals','Adjustments','Balance','End','Start',
+    'To','From','Of','For','With',
+})
 
 
 def extract(text: str):
