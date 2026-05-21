@@ -205,6 +205,7 @@ def main():
     ap.add_argument('--cooccur-dir')
     ap.add_argument('--quotes-dir')
     ap.add_argument('--threads-dir')
+    ap.add_argument('--imessages-dir')
     ap.add_argument('--per-page', type=int, default=20)
     args = ap.parse_args()
 
@@ -216,6 +217,7 @@ def main():
     coo   = safe_load(Path(args.cooccur_dir) / 'cooccur.json')  if args.cooccur_dir else None
     quotes= safe_load(Path(args.quotes_dir)  / 'quotes.json')   if args.quotes_dir  else None
     threads = safe_load(Path(args.threads_dir) / 'threads.json') if args.threads_dir else None
+    imsgs = safe_load(Path(args.imessages_dir) / 'imessages.json') if args.imessages_dir else None
 
     pages = []
 
@@ -257,6 +259,26 @@ def main():
                     'rank': i+1, 'text': p['phrase'], 'count': 0, 'docs': 0,
                     'note': p['source'], 'samples': [],
                 } for i, p in enumerate(miss)],
+            })
+
+    # iMessage chronological pages (forensic Mac export)
+    if imsgs and imsgs.get('messages'):
+        msgs = imsgs['messages']
+        msgs_per_page = 60
+        for i in range(0, min(len(msgs), msgs_per_page * 20), msgs_per_page):
+            page_msgs = msgs[i:i+msgs_per_page]
+            pages.append({
+                'kind': 'imessages',
+                'page': i // msgs_per_page + 1,
+                'title': f'Epstein iMessages (chronological) — page {i//msgs_per_page + 1}',
+                'subtitle': f'{imsgs["n_messages"]} messages from {imsgs["n_source_docs"]} forensic-export docs, sender breakdown: {imsgs["by_sender"]}',
+                'rows': [{
+                    'rank': i + j + 1,
+                    'text': m['message'],
+                    'note': m.get('timestamp', '?'),
+                    'sender': m['sender'],
+                    'doc_id': m['doc_id'],
+                } for j, m in enumerate(page_msgs)],
             })
 
     # PAGE 3-5: press recreate / codeword / doc-dates / mention-dates
