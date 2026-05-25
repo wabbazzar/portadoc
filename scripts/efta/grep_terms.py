@@ -51,18 +51,20 @@ def main():
 
     out = Path(args.out_dir); out.mkdir(parents=True, exist_ok=True)
 
-    # Build unified term list with (term, category, source) provenance
+    # Build unified term list with (term, category, source, url) provenance.
+    # URL is None for code_terms (no canonical primary source per code-language
+    # term); press terms pull from journalist_grep.url_for().
     all_terms = []
     for cat, term, note in code_terms.TERMS:
-        all_terms.append((term, f'code:{cat}', note))
+        all_terms.append((term, f'code:{cat}', note, None))
     for term, jcat, note in journalist_grep.TERMS:
-        all_terms.append((term, f'press:{jcat}', note))
+        all_terms.append((term, f'press:{jcat}', note, journalist_grep.url_for(term)))
 
     # Pre-compile
-    compiled = [(term, cat, note, compile_term(term)) for term, cat, note in all_terms]
+    compiled = [(term, cat, note, url, compile_term(term)) for term, cat, note, url in all_terms]
 
-    counters = {(t, c): {'count': 0, 'docs': set(), 'datasets': Counter(), 'sample': set(), 'note': n}
-                for t, c, n, _ in compiled}
+    counters = {(t, c): {'count': 0, 'docs': set(), 'datasets': Counter(), 'sample': set(), 'note': n, 'url': u}
+                for t, c, n, u, _ in compiled}
 
     n_docs = 0
     with open(args.corpus_jsonl) as f:
@@ -74,7 +76,7 @@ def main():
             if not text: continue
             ds = rec.get('dataset', 'unknown')
             docid = rec.get('id', '?')
-            for term, cat, note, rx in compiled:
+            for term, cat, note, url, rx in compiled:
                 hits = rx.findall(text)
                 if not hits: continue
                 slot = counters[(term, cat)]
@@ -96,6 +98,7 @@ def main():
             'datasets': dict(slot['datasets']),
             'sample_doc_ids': sorted(slot['sample']),
             'note': slot['note'],
+            'url': slot.get('url'),
         })
     rows.sort(key=lambda r: (-r['count'], r['term']))
 

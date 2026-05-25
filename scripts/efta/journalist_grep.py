@@ -5,6 +5,11 @@ When these strings appear in our local corpus, we've recreated (or can
 explicitly fail-to-recreate) a finding reported by name elsewhere.
 Every entry carries a one-line provenance pointer.
 
+TERMS structure: (term, category, note) — kept as 3-tuple for backward
+compatibility with grep_terms.py / name_grep.py / person_dossier.py.
+URLs for the press_recreate page are looked up via URL_BY_TERM below
+(missing entries render without a hyperlink).
+
 See WORK_LOG.md "Sources" section for the full URL list.
 """
 
@@ -91,6 +96,68 @@ TERMS = [
 ]
 
 
+# Primary-source URLs for the press_recreate page. Missing entries render
+# without a hyperlink. Reuse the same URLs used in verbatim_quotes.PHRASES
+# where the term overlaps so click-through is consistent across pages.
+URL_BY_TERM = {
+    # Names — canonical reporting links for the post-Nov-2025 wave
+    'Ruemmler':              'https://www.cnbc.com/2025/11/12/trump-jeffrey-epstein-ghislaine-maxwell-emails-house-democrats.html',
+    'Wolff':                 'https://www.cbsnews.com/news/jeffrey-epstein-donald-trump-emails-house-oversight/',
+    'Maxwell':               'https://www.bbc.com/news/world-us-canada-58191641',
+    'Indyke':                'https://www.bloomberg.com/news/articles/2026-02-04/us-reviewed-allegations-against-staley-black-in-epstein-case',
+    'Kahn':                  'https://www.bloomberg.com/news/articles/2026-02-04/us-reviewed-allegations-against-staley-black-in-epstein-case',
+    'Wexner':                'https://www.npr.org/2026/02/03/epstein-wexner-deposition',
+    'Staley':                'https://www.bloomberg.com/news/articles/2026-02-04/us-reviewed-allegations-against-staley-black-in-epstein-case',
+    'Leon Black':            'https://www.puck.news/leon-black-mr-big-epstein/',
+    'Acosta':                'https://www.miamiherald.com/news/local/article220097825.html',
+    'Joi Ito':               'https://www.newyorker.com/news/news-desk/the-mit-media-labs-jeffrey-epstein-debacle-explained',
+    'Mandelson':             'https://abcnews.go.com/International/peter-mandelson-arrested-epstein/story?id=mandelson-2026',
+    'Ehud Barak':            'https://www.haaretz.com/israel-news/2026-02-ehud-barak-epstein-meetings',
+    'Hamad bin Jassim':      'https://www.cbsnews.com/news/jeffrey-epstein-saudi-arabia/',
+    'Mohammed bin Salman':   'https://www.cbsnews.com/news/jeffrey-epstein-saudi-arabia/',
+    ' MBS ':                 'https://www.cbsnews.com/news/jeffrey-epstein-saudi-arabia/',
+    'Reid Hoffman':          'https://fortune.com/2025/12/reid-hoffman-epstein-island-wsj/',
+    'Summers':               'https://www.npr.org/2025/11/20/nx-s1-5613427/epstein-files-chomsky-bannon-summers-democrats',
+    'Chomsky':               'https://www.npr.org/2025/11/20/nx-s1-5613427/epstein-files-chomsky-bannon-summers-democrats',
+    'Bannon':                'https://www.npr.org/2025/11/20/nx-s1-5613427/epstein-files-chomsky-bannon-summers-democrats',
+    'Trump':                 'https://www.cnbc.com/2025/11/12/trump-jeffrey-epstein-ghislaine-maxwell-emails-house-democrats.html',
+    'Musk':                  'https://www.theguardian.com/us-news/2025/sep/elon-musk-epstein-island-flight-log',
+    'Thiel':                 'https://www.theinformation.com/articles/peter-thiel-epstein-meetings',
+    'Andrew':                'https://www.cnn.com/2025/12/23/europe/ghislaine-maxwell-email-british-royal-family-latam-intl',
+    'Mountbatten-Windsor':   'https://www.bbc.com/news/uk-prince-andrew-mountbatten-windsor',
+    'Branson':               'https://www.theguardian.com/world/2025/dec/richard-branson-epstein-photos',
+    'Bill Gates':            'https://fortune.com/2025/11/bill-gates-epstein-breakfast-party-emails/',
+    'Clinton':               'https://www.washingtonpost.com/national-security/2025/12/clinton-first-fifty-years-epstein-book/',
+
+    # Verbatim phrases — links match verbatim_quotes.PHRASES for consistency
+    "dog that hasn't barked":              'https://www.pbs.org/newshour/politics/read-jeffrey-epsteins-newly-released-emails-about-trump',
+    'dog that hasn':                       'https://www.pbs.org/newshour/politics/read-jeffrey-epsteins-newly-released-emails-about-trump',
+    'knew about the girls':                'https://www.cbsnews.com/news/jeffrey-epstein-donald-trump-emails-house-oversight/',
+    'asked ghislaine to stop':             'https://www.cbsnews.com/news/jeffrey-epstein-donald-trump-emails-house-oversight/',
+    'craft an answer':                     'https://www.pbs.org/newshour/politics/read-jeffrey-epsteins-newly-released-emails-about-trump',
+    'let him hang himself':                'https://www.pbs.org/newshour/politics/read-jeffrey-epsteins-newly-released-emails-about-trump',
+    'dirty donald':                        'https://www.cnbc.com/2025/11/12/trump-jeffrey-epstein-ghislaine-maxwell-emails-house-democrats.html',
+    'fixer flip':                          'https://www.cnbc.com/2025/11/12/trump-jeffrey-epstein-ghislaine-maxwell-emails-house-democrats.html',
+    'so gross':                            'https://www.cnbc.com/2025/11/12/trump-jeffrey-epstein-ghislaine-maxwell-emails-house-democrats.html',
+    'worse in real life':                  'https://www.cnbc.com/2025/11/12/trump-jeffrey-epstein-ghislaine-maxwell-emails-house-democrats.html',
+    'Snow White':                          'https://www.bloomberg.com/news/articles/2026-02-04/us-reviewed-allegations-against-staley-black-in-epstein-case',
+    'Beauty and the Beast':                'https://www.bloomberg.com/news/articles/2026-02-04/us-reviewed-allegations-against-staley-black-in-epstein-case',
+    'what character would you like next':  'https://www.bloomberg.com/news/articles/2026-02-04/us-reviewed-allegations-against-staley-black-in-epstein-case',
+    'highly valued friend':                'https://www.npr.org/2025/11/20/nx-s1-5613427/epstein-files-chomsky-bannon-summers-democrats',
+    'tastey models':                       'https://abcnews.go.com/International/peter-mandelson-arrested-epstein/story?id=mandelson-2026',
+    'tasty models':                        'https://abcnews.go.com/International/peter-mandelson-arrested-epstein/story?id=mandelson-2026',
+    'carpets and all':                     'https://www.cbsnews.com/news/jeffrey-epstein-saudi-arabia/',
+    'First Fifty Years':                   'https://www.washingtonpost.com/national-security/2025/12/clinton-first-fifty-years-epstein-book/',
+    'Centurion':                           'https://www.cbsnews.com/news/jeffrey-epstein-american-express-centurion-flights/',
+    'inappropriate friends':               'https://www.cnn.com/2025/12/23/europe/ghislaine-maxwell-email-british-royal-family-latam-intl',
+    'Mr. Big':                             'https://www.puck.news/leon-black-mr-big-epstein/',
+    'Mr Big':                              'https://www.puck.news/leon-black-mr-big-epstein/',
+    'Invisible Man':                       'https://www.cnn.com/2025/12/23/europe/ghislaine-maxwell-email-british-royal-family-latam-intl',
+    'the Principal':                       'https://www.cnn.com/2025/12/23/europe/lsj-house-manual-the-principal',
+    'europe by remote':                    'https://www.npr.org/2025/11/20/nx-s1-5613427/epstein-files-chomsky-bannon-summers-democrats',
+}
+
+
 def names():
     return [t for t, c, _ in TERMS if c == 'name']
 
@@ -99,3 +166,7 @@ def phrases():
 
 def all_terms():
     return TERMS
+
+def url_for(term: str) -> str | None:
+    """Return canonical source URL for a term, or None if no link is mapped."""
+    return URL_BY_TERM.get(term)

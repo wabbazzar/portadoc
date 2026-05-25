@@ -27,28 +27,32 @@ for i, m in enumerate(MONTH_ABBR):
     else: MONTH_MAP[m] = i+1 if i < 12 else 12
 
 # (regex, parser-fn) — parser returns (year:int, month:int|None) or None
+# Year ceiling: documents in the Epstein corpus cannot legitimately post-date the
+# 2026 release. Pre-1990 documents exist but are vanishingly rare (Epstein's
+# career didn't take off until the mid-90s); 1953-dated false-positives from
+# OCR-mangled SSNs and serial numbers were polluting the histogram.
 DATE_PATTERNS = [
     # 12/31/2017, 12-31-2017, 12.31.2017
-    (re.compile(r'\b(0?[1-9]|1[0-2])[/\-.](0?[1-9]|[12][0-9]|3[01])[/\-.](19[5-9][0-9]|20[0-3][0-9])\b'),
+    (re.compile(r'\b(0?[1-9]|1[0-2])[/\-.](0?[1-9]|[12][0-9]|3[01])[/\-.](199[0-9]|20[0-2][0-9])\b'),
      lambda m: (int(m.group(3)), int(m.group(1)))),
     # 12/31/17 → 2017
     (re.compile(r'\b(0?[1-9]|1[0-2])[/\-.](0?[1-9]|[12][0-9]|3[01])[/\-.]([0-9]{2})\b'),
      lambda m: (2000 + int(m.group(3)) if int(m.group(3)) < 50 else 1900 + int(m.group(3)),
                 int(m.group(1)))),
     # 2017-12-31
-    (re.compile(r'\b(19[5-9][0-9]|20[0-3][0-9])-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])\b'),
+    (re.compile(r'\b(199[0-9]|20[0-2][0-9])-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])\b'),
      lambda m: (int(m.group(1)), int(m.group(2)))),
     # January 31, 2017  |  Jan. 31, 2017  |  Jan 31 2017
-    (re.compile(r'\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan\.?|Feb\.?|Mar\.?|Apr\.?|Jun\.?|Jul\.?|Aug\.?|Sept?\.?|Oct\.?|Nov\.?|Dec\.?)\s+([0-3]?[0-9])(?:,)?\s+(19[5-9][0-9]|20[0-3][0-9])\b',
+    (re.compile(r'\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan\.?|Feb\.?|Mar\.?|Apr\.?|Jun\.?|Jul\.?|Aug\.?|Sept?\.?|Oct\.?|Nov\.?|Dec\.?)\s+([0-3]?[0-9])(?:,)?\s+(199[0-9]|20[0-2][0-9])\b',
                 re.IGNORECASE),
      lambda m: (int(m.group(3)), MONTH_MAP.get(m.group(1).lower().rstrip('.').replace('sept','sep')[:3], None))),
     # 31 January 2017 (DD Mon YYYY)
-    (re.compile(r'\b([0-3]?[0-9])\s+(January|February|March|April|May|June|July|August|September|October|November|December|Jan\.?|Feb\.?|Mar\.?|Apr\.?|Jun\.?|Jul\.?|Aug\.?|Sept?\.?|Oct\.?|Nov\.?|Dec\.?)\s+(19[5-9][0-9]|20[0-3][0-9])\b',
+    (re.compile(r'\b([0-3]?[0-9])\s+(January|February|March|April|May|June|July|August|September|October|November|December|Jan\.?|Feb\.?|Mar\.?|Apr\.?|Jun\.?|Jul\.?|Aug\.?|Sept?\.?|Oct\.?|Nov\.?|Dec\.?)\s+(199[0-9]|20[0-2][0-9])\b',
                 re.IGNORECASE),
      lambda m: (int(m.group(3)), MONTH_MAP.get(m.group(2).lower().rstrip('.').replace('sept','sep')[:3], None))),
     # Bare year, last resort: only used if nothing better matched
 ]
-BARE_YEAR = re.compile(r'\b(19[5-9][0-9]|20[0-3][0-9])\b')
+BARE_YEAR = re.compile(r'\b(199[0-9]|20[0-2][0-9])\b')
 
 
 def all_dates_in(text: str):
@@ -57,7 +61,7 @@ def all_dates_in(text: str):
         for m in rx.finditer(text):
             try:
                 y, mo = parser(m)
-                if 1950 <= y <= 2030 and (mo is None or 1 <= mo <= 12):
+                if 1990 <= y <= 2026 and (mo is None or 1 <= mo <= 12):
                     yield (y, mo)
             except Exception:
                 pass

@@ -45,9 +45,23 @@ PHRASES = [
     {
         "phrase": "dirty donald",
         "pattern": r"dirty\s+donald",
-        "source": "Aug 2018 Epstein → Kathryn Ruemmler email (Oversight Dems Nov 20 release)",
+        "source": "Aug 23 2018 Epstein → Kathryn Ruemmler email, in re: NYT 'Donald Trump's High Crimes and Misdemeanors' (House Oversight Republican estate release Nov 12 2025, HOUSE_OVERSIGHT_026505)",
         "url": "https://www.cnbc.com/2025/11/12/trump-jeffrey-epstein-ghislaine-maxwell-emails-house-democrats.html",
-        "significance": "Epstein to Kathryn Ruemmler (then Goldman Sachs Chief Legal Officer and ex-Obama White House Counsel): 'I know how dirty donald is.' Demonstrates Epstein cultivating a senior legal/political insider with explicit anti-Trump opposition research. Ruemmler RESIGNED from Goldman Sachs in late 2025 after this email surfaced.",
+        "significance": "Epstein to Kathryn Ruemmler (then Goldman Sachs Chief Legal Officer and ex-Obama White House Counsel), responding to her forwarded NYT op-ed: 'you see, i know how dirty donald is. my guess is that non lawyers ny biz people have no idea. what it means to have your fixer flip.' This was the day Cohen pleaded guilty. Demonstrates Epstein cultivating a senior legal/political insider with explicit anti-Trump opposition research. Ruemmler RESIGNED from Goldman Sachs in late 2025 after this email surfaced.",
+    },
+    {
+        "phrase": "I know how dirty donald is",
+        "pattern": r"i\s+know\s+how\s+dirty\s+donald\s+is",
+        "source": "Same Aug 23 2018 Ruemmler thread (HOUSE_OVERSIGHT_026505) — longer-form match for the most-quoted exact phrasing",
+        "url": "https://www.cnbc.com/2025/11/12/trump-jeffrey-epstein-ghislaine-maxwell-emails-house-democrats.html",
+        "significance": "The exact phrasing reporters have quoted verbatim. Co-located in the Aug 23 2018 Ruemmler thread alongside 'fixer flip' (a reference to Michael Cohen, who had pleaded guilty earlier that day).",
+    },
+    {
+        "phrase": "carpets and all",
+        "pattern": r"carpets\s+and\s+all",
+        "source": "Dec 15 2016 Epstein → Tom Pritzker email (House Oversight Republican estate release Nov 12 2025, HOUSE_OVERSIGHT_032391)",
+        "significance": "Epstein to Hyatt executive chairman Tom Pritzker: 'can you belive MBS sent mea TENT carpets and all.' Sent shortly after Epstein's solo Gulfstream trip Paris → Riyadh. Bedouin tents are a traditional Saudi hospitality gift; Pritzker replies playfully, 'I think that is code for I love you. Or maybe code for go pound sand. Better check your KSA urban dictionary.' The lavish gift's purpose is undocumented — and unexplained — but it dates the personal MBS-Epstein channel to before Trump's first inauguration.",
+        "url": "https://www.cbsnews.com/news/jeffrey-epstein-saudi-arabia/",
     },
     {
         "phrase": "Snow White",

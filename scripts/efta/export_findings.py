@@ -101,6 +101,7 @@ def page_grep(grep, category_filter, title, kind, per_page, page_idx=0):
             'docs': r['docs'], 'datasets': r['datasets'],
             'sample_doc_ids': r['sample_doc_ids'],
             'note': r.get('note', ''),
+            'url': r.get('url'),
         } for i, r in enumerate(rows)],
     }
 
@@ -470,7 +471,7 @@ def main():
         'names_grep': 'Counts mentions of each named entity across the FULL corpus (~173K docs). Uses a curated alias list (e.g. "Maxwell" matches "Ghislaine Maxwell", "G. Maxwell", "GM"). Sorted by distinct documents containing a mention.',
         'topic_search': 'Per-match topic search across the full corpus. Each row is ONE hit (not aggregate) with the message date, source doc id, the matched phrase, and surrounding context.',
         'verbatim_quote': 'Phrases reporters have publicly quoted from the EFTA release. Blockquotes are verbatim from our local copy.',
-        'press_recreate': 'Counts of journalist-cited names and phrases across the full corpus. The "source" column is a short citation only — NOT a clickable URL. (For phrases with real article links + significance blurbs, see the Verbatim press quotes page above.)',
+        'press_recreate': 'Counts of journalist-cited names and phrases across the full corpus. Rows with a primary-source citation link out to the original article; the rest list a short citation note only. (For phrases with full significance blurbs + verbatim quotes, see the Verbatim press quotes page above.)',
         'codeword_top': 'Documented Epstein-network code language from court filings + journalist reporting. Counts the literal terms across the corpus.',
         'doc_dates_year': 'Each document gets ONE canonical date via a priority chain: email Sent header > police report date > grand-jury heading > first body date > bare-year fallback. Bar shows how many documents are from each year.',
         'mention_dates_year': 'Every date-shaped string in document bodies. Per-doc deduplicated, then bucketed by year. Shows what years the corpus REFERS TO (vs. what years it was WRITTEN IN, see "Doc dates" page).',
