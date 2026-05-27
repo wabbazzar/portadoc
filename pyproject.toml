@@ -26,6 +26,21 @@ dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
 ]
+# Multi-engine OCR stack (CPU-only). Version-sensitive: surya-ocr 0.17.0 breaks
+# on transformers 5.x (pad_token_id), python-doctr 1.0.0 breaks on
+# huggingface-hub 1.0 (Repository removed). Capping transformers<5 fixes both,
+# since transformers 4.57.x already pins huggingface-hub<1.0. Install torch from
+# the CPU wheel index. See OCR_BENCHMARKS.md "Surya / docTR version fix".
+ocr = [
+    "torch>=2.7.0,<3.0.0",
+    "torchvision>=0.15.0",
+    "transformers>=4.56.1,<5.0.0",
+    "huggingface-hub>=0.34.0,<1.0.0",
+    "surya-ocr==0.17.0",
+    "python-doctr[torch]==1.0.0",
+    "paddleocr==2.10.0",
+    "paddlepaddle==3.3.0",
+]
 
 [project.scripts]
 portadoc = "portadoc.cli:main"

@@ -6,9 +6,30 @@ opencv-python>=4.8.0
 numpy>=1.24.0
 pillow>=10.0.0
 
-# OCR Engines
+# OCR Engines (default pipeline)
 pytesseract>=0.3.10
 easyocr>=1.7.0
+
+# --- Multi-engine OCR stack (CPU-only, optional but enabled by default) ---
+# PaddleOCR, docTR and Surya extend the Tesseract+EasyOCR pipeline and share the
+# HuggingFace transformers/torch stack, which is version-sensitive:
+#   * surya-ocr 0.17.0 crashes on transformers 5.x with
+#       "'SuryaDecoderConfig' object has no attribute 'pad_token_id'"
+#     and needs transformers 4.x (>=4.56.1).
+#   * python-doctr 1.0.0 imports `Repository` from huggingface_hub, removed in
+#     huggingface_hub 1.0, so it needs huggingface-hub <1.0.
+# transformers 4.57.x already pins huggingface-hub<1.0,>=0.34.0, so capping
+# transformers<5 fixes both. See OCR_BENCHMARKS.md "Surya / docTR version fix".
+# Install torch from the CPU index:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+torch>=2.7.0,<3.0.0
+torchvision>=0.15.0
+transformers>=4.56.1,<5.0.0
+huggingface-hub>=0.34.0,<1.0.0
+surya-ocr==0.17.0
+python-doctr[torch]==1.0.0
+paddleocr==2.10.0
+paddlepaddle==3.3.0
 
 # Web Framework
 fastapi>=0.109.0

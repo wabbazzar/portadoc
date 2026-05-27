@@ -277,59 +277,71 @@ def extract(
 
 
 @main.command()
-def check():
-    """Check OCR engine availability."""
-    from .ocr.tesseract import is_tesseract_available, get_tesseract_version
-    from .ocr.easyocr import is_easyocr_available, get_easyocr_version
-    from .ocr.paddleocr import is_paddleocr_available, get_paddleocr_version
-    from .ocr.doctr_ocr import is_doctr_available, get_doctr_version
-    from .ocr.surya_ocr import is_surya_available, get_surya_version
-    from .ocr.kraken_ocr import is_kraken_available, get_kraken_version
+@click.option(
+    "--fast",
+    is_flag=True,
+    help="Only check imports/availability; skip running each engine on a probe image",
+)
+def check(fast: bool):
+    """Check OCR engine availability by actually running each engine.
 
-    click.echo("OCR Engine Status:")
-    click.echo("-" * 40)
+    By default every installed engine is exercised on a tiny synthetic image so
+    "OK" means it genuinely produces output (this catches runtime version-skew
+    bugs that a plain import check misses). Use --fast to only check imports.
+    """
+    from .extractor import probe_engine, _engine_funcs, _ENGINE_NAMES
 
-    if is_tesseract_available():
-        version = get_tesseract_version()
-        click.echo(f"Tesseract:  OK (version {version})")
+    # Display name + install hint per engine
+    meta = {
+        "tesseract": ("Tesseract", "sudo apt-get install tesseract-ocr tesseract-ocr-eng"),
+        "easyocr": ("EasyOCR", "pip install easyocr"),
+        "paddleocr": ("PaddleOCR", "pip install paddleocr"),
+        "doctr": ("docTR", "pip install 'python-doctr[torch]'"),
+        "surya": ("Surya", "pip install surya-ocr"),
+        "kraken": ("Kraken", "pip install 'kraken[pdf]'"),
+    }
+
+    if fast:
+        click.echo("OCR Engine Status (import check only):")
     else:
-        click.echo("Tesseract:  NOT FOUND (REQUIRED)")
-        click.echo("  Install with: sudo apt-get install tesseract-ocr tesseract-ocr-eng")
+        click.echo("OCR Engine Status (running each engine on a probe image):")
+    click.echo("-" * 56)
 
-    if is_easyocr_available():
-        version = get_easyocr_version()
-        click.echo(f"EasyOCR:    OK (version {version})")
-    else:
-        click.echo("EasyOCR:    NOT FOUND")
-        click.echo("  Install with: pip install easyocr")
+    any_fails = False
+    for name in _ENGINE_NAMES:
+        label, hint = meta[name]
+        available_fn, version_fn, _ = _engine_funcs(name)
 
-    if is_paddleocr_available():
-        version = get_paddleocr_version()
-        click.echo(f"PaddleOCR:  OK (version {version})")
-    else:
-        click.echo("PaddleOCR:  NOT FOUND")
-        click.echo("  Install with: pip install paddleocr")
+        if fast:
+            if available_fn():
+                click.echo(f"{label + ':':12} OK (version {version_fn()})")
+            else:
+                click.echo(f"{label + ':':12} NOT FOUND")
+                click.echo(f"  Install with: {hint}")
+            continue
 
-    if is_doctr_available():
-        version = get_doctr_version()
-        click.echo(f"docTR:      OK (version {version})")
-    else:
-        click.echo("docTR:      NOT FOUND")
-        click.echo("  Install with: pip install python-doctr[torch]")
+        result = probe_engine(name)
+        status = result["status"]
+        version = result["version"]
 
-    if is_surya_available():
-        version = get_surya_version()
-        click.echo(f"Surya:      OK (version {version})")
-    else:
-        click.echo("Surya:      NOT FOUND")
-        click.echo("  Install with: pip install surya-ocr")
+        if status == "OK":
+            click.echo(f"{label + ':':12} OK (version {version}, {result['words']} words)")
+        elif status == "NO OUTPUT":
+            click.echo(f"{label + ':':12} INSTALLED but produced no output (version {version})")
+        elif status == "FAILS":
+            any_fails = True
+            click.echo(f"{label + ':':12} INSTALLED but CRASHES at runtime (version {version})")
+            click.echo(f"  Error: {result['detail']}")
+        else:  # NOT FOUND
+            req = " (REQUIRED)" if name == "tesseract" else ""
+            click.echo(f"{label + ':':12} NOT FOUND{req}")
+            click.echo(f"  Install with: {hint}")
 
-    if is_kraken_available():
-        version = get_kraken_version()
-        click.echo(f"Kraken:     OK (version {version})")
-    else:
-        click.echo("Kraken:     NOT FOUND")
-        click.echo("  Install with: pip install kraken[pdf]")
+    if any_fails:
+        click.echo("")
+        click.echo("One or more engines crash at runtime. They will be skipped during")
+        click.echo("extraction (the run continues with the engines that work).")
+        sys.exit(1)
 
 
 @main.command("eval")

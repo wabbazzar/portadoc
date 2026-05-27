@@ -1,16 +1,31 @@
 """Main word extraction pipeline."""
 
+import logging
 from pathlib import Path
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 from .models import BBox, Document, Page, Word, HarmonizedWord
 from .pdf import load_pdf
-from .ocr.tesseract import extract_words_tesseract, is_tesseract_available
-from .ocr.easyocr import extract_words_easyocr, is_easyocr_available
-from .ocr.paddleocr import extract_words_paddleocr, is_paddleocr_available
-from .ocr.doctr_ocr import extract_words_doctr, is_doctr_available
-from .ocr.surya_ocr import extract_words_surya, is_surya_available
-from .ocr.kraken_ocr import extract_words_kraken, is_kraken_available
+from .ocr.tesseract import (
+    extract_words_tesseract, is_tesseract_available, get_tesseract_version,
+)
+from .ocr.easyocr import (
+    extract_words_easyocr, is_easyocr_available, get_easyocr_version,
+)
+from .ocr.paddleocr import (
+    extract_words_paddleocr, is_paddleocr_available, get_paddleocr_version,
+)
+from .ocr.doctr_ocr import (
+    extract_words_doctr, is_doctr_available, get_doctr_version,
+)
+from .ocr.surya_ocr import (
+    extract_words_surya, is_surya_available, get_surya_version,
+)
+from .ocr.kraken_ocr import (
+    extract_words_kraken, is_kraken_available, get_kraken_version,
+)
 from .detection import detect_missed_content
 from .harmonize import harmonize
 from .preprocess import PreprocessLevel, preprocess_for_ocr, auto_detect_quality
@@ -19,6 +34,92 @@ from .triage import TriageLevel, triage_words
 from .config import PortadocConfig, get_config, load_config
 from .geometric_clustering import order_words_by_reading
 from .page_align import align_page, transform_bbox_to_original
+
+
+# Known engines, in probe/report order. The availability, version and extract
+# functions follow a consistent naming scheme, so we resolve them by name from
+# this module's globals at call time. Resolving dynamically (rather than caching
+# the function objects) keeps probing in step with any monkeypatching, exactly
+# like extract_words() which also looks the engine functions up as globals.
+_ENGINE_NAMES: tuple[str, ...] = (
+    "tesseract", "easyocr", "paddleocr", "doctr", "surya", "kraken",
+)
+
+
+def _engine_funcs(name: str) -> tuple:
+    """Resolve (availability_fn, version_fn, extract_fn) for an engine by name."""
+    if name not in _ENGINE_NAMES:
+        raise ValueError(f"Unknown engine: {name}")
+    g = globals()
+    return (
+        g[f"is_{name}_available"],
+        g[f"get_{name}_version"],
+        g[f"extract_words_{name}"],
+    )
+
+
+def _make_probe_image():
+    """Build a tiny synthetic image with known text, for runtime engine probing."""
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageFont
+
+    img = Image.new("RGB", (320, 90), "white")
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32
+        )
+    except Exception:
+        font = ImageFont.load_default()
+    draw.text((12, 28), "Test 123", fill="black", font=font)
+    return np.asarray(img)
+
+
+def probe_engine(name: str, image=None) -> dict:
+    """
+    Probe a single OCR engine by actually running it on a tiny image.
+
+    Unlike a plain import check, this catches the version-skew failures that
+    only surface at runtime (e.g. Surya's ``pad_token_id`` crash), so a status
+    of "OK" means the engine genuinely produced output.
+
+    Returns a dict with keys:
+        name:    engine name
+        status:  "OK" | "NO OUTPUT" | "FAILS" | "NOT FOUND"
+        version: version string or None
+        words:   number of words extracted (when run)
+        detail:  error message (when status == "FAILS")
+    """
+    available_fn, version_fn, extract_fn = _engine_funcs(name)
+
+    if not available_fn():
+        return {"name": name, "status": "NOT FOUND", "version": None,
+                "words": 0, "detail": None}
+
+    version = version_fn()
+    if image is None:
+        image = _make_probe_image()
+    height, width = image.shape[0], image.shape[1]
+
+    try:
+        words = extract_fn(image, 0, float(width), float(height))
+    except Exception as exc:  # noqa: BLE001 - report any runtime failure
+        return {"name": name, "status": "FAILS", "version": version,
+                "words": 0, "detail": str(exc)}
+
+    n = len(words)
+    status = "OK" if n > 0 else "NO OUTPUT"
+    return {"name": name, "status": status, "version": version,
+            "words": n, "detail": None}
+
+
+def probe_engines(names: Optional[list[str]] = None) -> list[dict]:
+    """Probe several engines at runtime. Defaults to all known engines."""
+    if names is None:
+        names = list(_ENGINE_NAMES)
+    # Reuse one probe image across engines so results are comparable.
+    image = _make_probe_image()
+    return [probe_engine(name, image=image) for name in names]
 
 
 def extract_words(
@@ -160,50 +261,83 @@ def extract_words(
                     level = PreprocessLevel(preprocess)
                 ocr_image = preprocess_for_ocr(ocr_image, level=level, return_rgb=True)
 
-            # Extract words from all enabled engines
+            # Extract words from all enabled engines.
+            # Each engine runs in isolation: a single engine crashing at runtime
+            # (e.g. a version-skew bug) must NOT abort the whole extract. We log a
+            # warning and harmonize over the engines that succeeded.
             all_engine_results: dict[str, list[Word]] = {}
             tess_config = f"--psm {tesseract_psm} --oem {tesseract_oem}"
 
+            engine_tasks: list[tuple[str, callable]] = []
             if tesseract_ok:
-                all_engine_results["tesseract"] = extract_words_tesseract(
+                engine_tasks.append(("tesseract", lambda: extract_words_tesseract(
                     ocr_image, page_num, page_width, page_height, config=tess_config
-                )
-
+                )))
             if easyocr_ok:
-                all_engine_results["easyocr"] = extract_words_easyocr(
+                engine_tasks.append(("easyocr", lambda: extract_words_easyocr(
                     ocr_image, page_num, page_width, page_height, gpu=gpu,
                     decoder=easyocr_decoder, text_threshold=easyocr_text_threshold
-                )
-
+                )))
             if paddleocr_ok:
-                all_engine_results["paddleocr"] = extract_words_paddleocr(
+                engine_tasks.append(("paddleocr", lambda: extract_words_paddleocr(
                     ocr_image, page_num, page_width, page_height, use_gpu=gpu
-                )
-
+                )))
             if doctr_ok:
-                all_engine_results["doctr"] = extract_words_doctr(
+                engine_tasks.append(("doctr", lambda: extract_words_doctr(
                     ocr_image, page_num, page_width, page_height
-                )
-
+                )))
             if surya_ok:
-                all_engine_results["surya"] = extract_words_surya(
+                engine_tasks.append(("surya", lambda: extract_words_surya(
                     ocr_image, page_num, page_width, page_height
-                )
-
+                )))
             if kraken_ok:
-                all_engine_results["kraken"] = extract_words_kraken(
+                engine_tasks.append(("kraken", lambda: extract_words_kraken(
                     ocr_image, page_num, page_width, page_height
-                )
+                )))
 
-            # Split into primary and secondary based on config
-            primary_words = all_engine_results.get(primary, [])
+            failed_engines: list[str] = []
+            for engine_name, run_engine in engine_tasks:
+                try:
+                    all_engine_results[engine_name] = run_engine()
+                except Exception as exc:
+                    failed_engines.append(engine_name)
+                    logger.warning(
+                        "OCR engine '%s' failed on page %d: %s. "
+                        "Continuing with remaining engines.",
+                        engine_name, page_num, exc,
+                    )
+
+            # If the primary engine itself failed, harmonization has no bbox
+            # authority for this page. Fall back to any surviving engine so the
+            # run still produces output rather than aborting.
+            if primary not in all_engine_results:
+                if not all_engine_results:
+                    logger.error(
+                        "All OCR engines failed on page %d; no words extracted.",
+                        page_num,
+                    )
+                    continue
+                fallback_primary = next(iter(all_engine_results))
+                logger.warning(
+                    "Primary engine '%s' produced no results on page %d "
+                    "(failed: %s); using '%s' as primary for this page.",
+                    primary, page_num, ", ".join(failed_engines) or "none",
+                    fallback_primary,
+                )
+                page_primary = fallback_primary
+            else:
+                page_primary = primary
+
+            # Split into primary and secondary based on config (per-page primary
+            # accounts for a failed configured primary engine on this page)
+            primary_words = all_engine_results.get(page_primary, [])
             secondary_results: dict[str, list[Word]] = {
                 eng: words for eng, words in all_engine_results.items()
-                if eng != primary
+                if eng != page_primary
             }
 
             # Harmonize results
-            page_harmonized = harmonize(primary_words, secondary_results, config, primary_engine=primary)
+            page_harmonized = harmonize(primary_words, secondary_results, config, primary_engine=page_primary)
 
             # Pixel detection fallback for missed content
             if use_pixel_detection:
